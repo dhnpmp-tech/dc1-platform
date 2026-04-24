@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-palette="midnight">
+<head>
+<meta charset="utf-8">
+<title>Batch jobs — DCP</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/dcp-kit.css">
+<link rel="stylesheet" href="../assets/app-shell.css">
+<link rel="stylesheet" href="../assets/app-i18n-rtl.css">
+<style>
+  /* stats strip */
+  .j-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; border: 1px solid var(--hair); background: var(--paper); margin-bottom: 22px; }
+  .j-stats .s { padding: 18px 22px; border-inline-end: 1px solid var(--hair); }
+  .j-stats .s:last-child { border-inline-end: none; }
+  .j-stats .s .k { font-family: var(--mono); font-size: 10px; letter-spacing: .12em; color: var(--mut); text-transform: uppercase; }
+  .j-stats .s .v { font-family: var(--serif); font-size: 32px; color: var(--ink); line-height: 1.05; margin: 6px 0 2px; }
+  .j-stats .s .v em { color: var(--orange); font-style: italic; }
+  .j-stats .s .sub { font-family: var(--mono); font-size: 10px; color: var(--mut); letter-spacing: .04em; }
+  .j-stats .s .sub.ok { color: var(--ok); }
+  .j-stats .s .sub.warn { color: var(--warn); }
+
+  /* action bar */
+  .j-bar {
+    display: flex; gap: 10px; align-items: center; margin-bottom: 16px;
+    padding: 12px 16px; border: 1px solid var(--hair); background: var(--paper);
+  }
+  .j-bar .lb { font-family: var(--mono); font-size: 10px; letter-spacing: .12em; color: var(--mut); text-transform: uppercase; margin-inline-end: 4px; }
+  .j-bar .chip {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; padding: 5px 12px;
+    border: 1px solid var(--hair); background: var(--bg); cursor: pointer; color: var(--ink-2); text-transform: uppercase;
+  }
+  .j-bar .chip:hover { border-color: var(--ink); color: var(--ink); }
+  .j-bar .chip.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .j-bar .chip .n { color: var(--mut); margin-inline-start: 6px; }
+  .j-bar .chip.on .n { color: color-mix(in oklab, var(--bg) 70%, var(--mut) 30%); }
+  .j-bar .spacer { flex: 1; }
+  .j-bar .new {
+    padding: 8px 16px; background: var(--ink); color: var(--bg); font-family: var(--mono);
+    font-size: 11px; letter-spacing: .12em; border: none; cursor: pointer; text-transform: uppercase;
+  }
+  .j-bar .new:hover { background: var(--orange); }
+
+  /* jobs table */
+  .j-table { border: 1px solid var(--hair); background: var(--paper); }
+  .j-head, .j-row {
+    display: grid; grid-template-columns: 1fr 160px 150px 1.2fr 130px 100px;
+    align-items: center;
+  }
+  .j-head {
+    padding: 12px 22px; border-bottom: 1px solid var(--hair);
+    font-family: var(--mono); font-size: 10px; letter-spacing: .12em; color: var(--mut); text-transform: uppercase;
+  }
+  .j-row {
+    padding: 16px 22px; border-bottom: 1px solid var(--hair); cursor: pointer; transition: background .12s;
+  }
+  .j-row:last-child { border-bottom: none; }
+  .j-row:hover { background: var(--bg-2); }
+  .j-row.on { background: var(--bg-2); box-shadow: inset 3px 0 0 var(--orange); }
+
+  .j-row .name-col { min-width: 0; }
+  .j-row .nm { font-size: 14px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .j-row .id { font-family: var(--mono); font-size: 10.5px; color: var(--mut); letter-spacing: .02em; margin-top: 3px; }
+  .j-row .kind-col { font-family: var(--mono); font-size: 11px; color: var(--ink-2); letter-spacing: .04em; }
+  .j-row .kind-col .mo { color: var(--orange); margin-inline-end: 6px; }
+
+  .j-status {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+  }
+  .j-status .d { width: 6px; height: 6px; border-radius: 50%; }
+  .j-status.running .d { background: var(--orange); box-shadow: 0 0 0 3px color-mix(in oklab, var(--orange) 25%, transparent); animation: p 1.6s ease-in-out infinite; }
+  .j-status.running { color: var(--orange); }
+  .j-status.queued  .d { background: var(--mut); }
+  .j-status.queued  { color: var(--ink-2); }
+  .j-status.done    .d { background: var(--ok); }
+  .j-status.done    { color: var(--ok); }
+  .j-status.failed  .d { background: var(--err); }
+  .j-status.failed  { color: var(--err); }
+  @keyframes p { 50% { opacity: .35; } }
+
+  .j-row .progress {
+    display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;
+  }
+  .j-row .progress .bar {
+    height: 4px; background: var(--bg-2); position: relative; border: 1px solid var(--hair);
+  }
+  .j-row .progress .bar .f {
+    position: absolute; inset: -1px -1px -1px -1px; right: auto;
+    background: var(--orange); transition: width .3s;
+  }
+  .j-row.done .progress .bar .f { background: var(--ok); }
+  .j-row.failed .progress .bar .f { background: var(--err); }
+  .j-row.queued .progress .bar .f { background: var(--hair); }
+  .j-row .progress .pct { font-family: var(--mono); font-size: 11px; color: var(--ink); letter-spacing: .02em; }
+  .j-row .progress .meta { grid-column: 1 / -1; font-family: var(--mono); font-size: 9.5px; color: var(--mut); letter-spacing: .04em; margin-top: 4px; text-transform: uppercase; }
+
+  .j-row .cost { font-family: var(--mono); font-size: 12px; color: var(--ink); letter-spacing: .02em; text-align: end; }
+  .j-row .cost .u { color: var(--mut); font-size: 10px; margin-inline-start: 2px; }
+
+  /* detail drawer */
+  .drawer-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,.25); z-index: 150;
+  }
+  .drawer {
+    position: fixed; top: 0; inset-inline-end: 0; bottom: 0; width: 560px; max-width: 90vw;
+    background: var(--paper); border-inline-start: 1px solid var(--hair); z-index: 160;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .drawer-hd {
+    padding: 20px 28px; border-bottom: 1px solid var(--hair); display: flex; align-items: flex-start; gap: 18px;
+  }
+  .drawer-hd .eb { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; color: var(--mut); text-transform: uppercase; }
+  .drawer-hd h2 { font-family: var(--serif); font-weight: 400; font-size: 28px; letter-spacing: -.005em; margin: 6px 0 4px; color: var(--ink); line-height: 1.1; }
+  .drawer-hd .id { font-family: var(--mono); font-size: 11px; color: var(--mut); letter-spacing: .04em; }
+  .drawer-hd .x { margin-inline-start: auto; cursor: pointer; font-family: var(--mono); font-size: 12px; color: var(--mut); }
+  .drawer-hd .x:hover { color: var(--ink); }
+
+  .drawer-body { flex: 1; overflow-y: auto; }
+  .drawer-sec { padding: 20px 28px; border-bottom: 1px solid var(--hair); }
+  .drawer-sec .ttl { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; color: var(--mut); text-transform: uppercase; margin-bottom: 14px; }
+
+  .drawer-big-progress {
+    display: grid; grid-template-columns: 1fr auto; gap: 16px; margin-bottom: 12px; align-items: baseline;
+  }
+  .drawer-big-progress .v { font-family: var(--serif); font-size: 48px; line-height: 1; letter-spacing: -.01em; color: var(--ink); }
+  .drawer-big-progress .v em { color: var(--orange); font-style: italic; }
+  .drawer-big-progress .v .of { font-family: var(--sans); font-size: 16px; color: var(--mut); font-style: normal; margin-inline-start: 6px; letter-spacing: 0; }
+  .drawer-big-progress .eta { font-family: var(--mono); font-size: 11px; letter-spacing: .06em; color: var(--orange); text-transform: uppercase; text-align: end; }
+  .drawer-progress-bar { height: 8px; background: var(--bg-2); border: 1px solid var(--hair); position: relative; margin: 12px 0 8px; }
+  .drawer-progress-bar .f { position: absolute; inset: -1px -1px -1px -1px; right: auto; background: var(--orange); }
+  .drawer-progress-bar.done .f { background: var(--ok); }
+  .drawer-progress-bar.failed .f { background: var(--err); }
+  .drawer-progress-bar.queued .f { background: var(--hair); }
+
+  .drawer-kv { display: grid; grid-template-columns: 110px 1fr; gap: 10px 16px; }
+  .drawer-kv .k { font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; color: var(--mut); text-transform: uppercase; padding-top: 3px; }
+  .drawer-kv .v { font-size: 13.5px; color: var(--ink); line-height: 1.5; word-break: break-all; }
+  .drawer-kv .v.mono { font-family: var(--mono); font-size: 12px; letter-spacing: .02em; color: var(--ink-2); }
+
+  .drawer-actions { padding: 20px 28px; border-top: 1px solid var(--hair); display: flex; gap: 10px; background: var(--bg-2); }
+  .drawer-actions .btn {
+    padding: 10px 18px; font-family: var(--mono); font-size: 11px; letter-spacing: .12em;
+    text-transform: uppercase; border: 1px solid var(--hair); background: var(--paper); color: var(--ink);
+    cursor: pointer; flex: 1; text-align: center;
+  }
+  .drawer-actions .btn:hover { border-color: var(--ink); }
+  .drawer-actions .btn.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .drawer-actions .btn.primary:hover { background: var(--orange); border-color: var(--orange); }
+  .drawer-actions .btn.danger { color: var(--err); border-color: color-mix(in oklab, var(--err) 40%, transparent); }
+  .drawer-actions .btn.danger:hover { background: var(--err); color: var(--bg); border-color: var(--err); }
+
+  /* failure note */
+  .failure-note {
+    background: color-mix(in oklab, var(--err) 8%, var(--bg)); border: 1px solid color-mix(in oklab, var(--err) 30%, transparent);
+    padding: 14px 16px; font-family: var(--mono); font-size: 11.5px; line-height: 1.55; color: var(--ink); letter-spacing: .02em;
+  }
+  .failure-note .x { color: var(--err); font-weight: 600; margin-inline-end: 6px; }
+
+  /* log timeline in drawer */
+  .log-tl { padding: 0; }
+  .log-tl .r {
+    display: grid; grid-template-columns: 110px 1fr; gap: 14px; padding: 10px 0; font-family: var(--mono); font-size: 11px; letter-spacing: .02em; color: var(--ink-2);
+  }
+  .log-tl .r .t { color: var(--mut); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; padding-top: 1px; }
+  .log-tl .r .e { line-height: 1.5; }
+  .log-tl .r.err .e { color: var(--err); }
+  .log-tl .r.ok .e { color: var(--ok); }
+
+  @media (max-width: 1300px) {
+    .j-head, .j-row { grid-template-columns: 1fr 140px 140px 1fr 110px; }
+    .j-row .cost { display: none; }
+    .j-head > :last-child { display: none; }
+  }
+  @media (max-width: 900px) {
+    .j-head, .j-row { grid-template-columns: 1fr 1fr; }
+    .j-head > :nth-child(n+3), .j-row > :nth-child(n+3) { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+
+<script src="../assets/i18n.js?v=2"></script>
+<script src="../assets/data.js"></script>
+<script src="../assets/data-app.js"></script>
+<script src="../assets/data-ops.js"></script>
+<script>window.DCP_LOGO_SRC = "../assets/dcp-logo-square.jpeg";</script>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="../assets/dcp-kit.jsx"></script>
+<script type="text/babel" src="../assets/app-shell.jsx"></script>
+<script type="text/babel" src="./Jobs.jsx"></script>
+
+<script src="../assets/app-polish.js?v=3"></script>
+</body>
+</html>

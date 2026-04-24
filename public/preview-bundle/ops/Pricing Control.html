@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>DCP Ops — Pricing Control</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../assets/dcp-kit.css" />
+<link rel="stylesheet" href="../assets/ops-shell.css" />
+<style>
+.pg-peg { background: var(--paper); border: 1px solid var(--hair); padding: 24px; position: relative; overflow: hidden; }
+.pg-peg-n { font-family: var(--serif); font-size: 72px; line-height: 1; letter-spacing: -.02em; color: var(--accent); font-style: italic; }
+.pg-peg-l { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; color: var(--mut); text-transform: uppercase; margin-top: 8px; }
+.pg-dial { position: relative; width: 100%; height: 6px; background: var(--bg-2); margin-top: 14px; }
+.pg-dial::before { content: ""; position: absolute; left: 50%; top: -4px; width: 1px; height: 14px; background: var(--ink-2); }
+.pg-dial .marker { position: absolute; top: -4px; width: 2px; height: 14px; background: var(--accent); }
+.pg-dial-lb { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 9.5px; color: var(--mut); letter-spacing: .08em; margin-top: 6px; }
+
+.pg-delta { font-family: var(--mono); font-size: 11px; letter-spacing: .03em; }
+.pg-delta.up { color: var(--green); }
+.pg-delta.dn { color: var(--red); }
+.pg-delta.zero { color: var(--mut); }
+</style>
+</head>
+<body class="ops">
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../assets/data-ops-admin.js"></script>
+<script type="text/babel" src="../assets/ops-shell.jsx"></script>
+<script type="text/babel">
+const A = window.DCP_OPS_ADMIN;
+const P = A.pricing;
+const { OpsShell, Chip, Kpi } = window;
+
+function App() {
+  // Peg marker — center is 0, each side is 10bp
+  const markerPct = 50 + (P.peg_drift_bps / 10) * 50;
+
+  return (
+    <OpsShell current="pricing" crumb="Pricing Control" alarms={1} env="PROD" build={A.build}>
+      <div className="ops-page">
+        <div className="ops-page-hd">
+          <div>
+            <div className="ops-page-eb">Ops · Finance</div>
+            <h1 className="ops-page-h1">Pricing &amp; <em>peg</em></h1>
+            <div className="ops-page-lede">
+              Rate cards for every model on DCP, platform margin, and the SAR/USD peg used for stablecoin settlement. Changes ladder through CFO approval and publish to <span className="mono">/v1/pricing</span> within 60 seconds.
+            </div>
+          </div>
+          <div className="ops-page-actions">
+            <button className="ops-btn">Price history</button>
+            <button className="ops-btn primary">Propose change</button>
+          </div>
+        </div>
+
+        <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12, marginBottom:14}}>
+          <div className="pg-peg">
+            <div className="pg-peg-l">SAR / USD · peg</div>
+            <div className="pg-peg-n">{P.peg_sar_usd}</div>
+            <div className="mono dim" style={{fontSize:10, marginTop:4}}>updated {P.peg_updated_at}</div>
+            <div className="pg-dial">
+              <div className="marker" style={{insetInlineStart: markerPct + "%"}} />
+            </div>
+            <div className="pg-dial-lb"><span>−10bp</span><span className="mono" style={{color:"var(--green)"}}>Δ {P.peg_drift_bps}bp</span><span>+10bp</span></div>
+          </div>
+          <div className="pg-peg">
+            <div className="pg-peg-l">Platform take</div>
+            <div className="pg-peg-n">{Math.round(P.platform_take * 100)}<span style={{fontSize:32, color:"var(--ink-2)"}}>%</span></div>
+            <div className="mono dim" style={{fontSize:10, marginTop:4}}>provider share 75% · fixed</div>
+            <div style={{display:"flex", height:24, border:"1px solid var(--hair-2)", marginTop:14}}>
+              <div style={{flex:75, background:"var(--accent)", color:"var(--bg)", fontFamily:"var(--mono)", fontSize:10, display:"flex", alignItems:"center", justifyContent:"center", letterSpacing:".08em"}}>PROVIDER</div>
+              <div style={{flex:25, background:"var(--bg-2)", color:"var(--ink)", fontFamily:"var(--mono)", fontSize:10, display:"flex", alignItems:"center", justifyContent:"center", letterSpacing:".08em"}}>DCP</div>
+            </div>
+          </div>
+          <div className="pg-peg">
+            <div className="pg-peg-l">Rate cards · active</div>
+            <div className="pg-peg-n">{P.rate_cards.length}</div>
+            <div className="mono dim" style={{fontSize:10, marginTop:4}}>1 change in last 30d · falcon-h1 −4%</div>
+            <div className="mono" style={{fontSize:11, color:"var(--amber)", marginTop:14, letterSpacing:".04em"}}>⚑ 2 models due for review</div>
+          </div>
+        </div>
+
+        <div className="ops-card" style={{padding:0}}>
+          <div style={{padding:"14px 18px", borderBottom:"1px solid var(--hair)"}}>
+            <div className="mono" style={{fontSize:10, letterSpacing:".12em", color:"var(--mut)", textTransform:"uppercase"}}>Rate cards</div>
+            <div className="ops-card-t" style={{fontSize:20, marginTop:2}}>Per-model pricing · <em>SAR per 1M tokens</em></div>
+          </div>
+          <table className="ops-tbl">
+            <thead><tr>
+              <th>Model</th>
+              <th className="num">Input</th>
+              <th className="num">Output</th>
+              <th className="num">Provider share</th>
+              <th>Last changed</th>
+              <th>Next review</th>
+              <th className="num">Δ 30d</th>
+              <th></th>
+            </tr></thead>
+            <tbody>
+              {P.rate_cards.map(r => {
+                const dueSoon = new Date(r.next_review) < new Date("2026-06-01");
+                const dCls = r.delta_30d > 0 ? "up" : r.delta_30d < 0 ? "dn" : "zero";
+                return (
+                  <tr key={r.model}>
+                    <td><span className="mono" style={{color:"var(--accent)"}}>{r.model}</span></td>
+                    <td className="num mono">{r.per_image ? <>SAR {r.per_image.toFixed(2)} <span className="dim">/img</span></> : "SAR " + (r.in?.toFixed(2) || "—")}</td>
+                    <td className="num mono">{r.per_image ? "—" : "SAR " + (r.out?.toFixed(2) || "—")}</td>
+                    <td className="num">{Math.round(r.provider_share * 100)}%</td>
+                    <td className="mono dim" style={{fontSize:11}}>{r.last_changed}</td>
+                    <td><span className="mono" style={{fontSize:11, color: dueSoon ? "var(--amber)":"var(--ink-2)"}}>{r.next_review}</span></td>
+                    <td className={"num pg-delta " + dCls}>{r.delta_30d > 0 ? "+" : ""}{(r.delta_30d * 100).toFixed(1)}%</td>
+                    <td><button className="ops-btn sm">Propose →</button></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </OpsShell>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

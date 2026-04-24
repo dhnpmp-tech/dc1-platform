@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-lang="en" data-palette="midnight">
+<head>
+<meta charset="utf-8">
+<title>Providers — DCP</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Naskh+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/dcp-kit.css">
+<style>
+  .pg-hero { padding: 120px 0 0; border-bottom:1px solid var(--hair); position:relative; overflow:hidden; }
+  .pg-hero .hero-bg { position:absolute; inset:0; opacity:.55; pointer-events:none; }
+  .pg-hero .inner { position:relative; }
+  .pg-hero h1 { font-family:var(--serif); font-weight:400; font-size:clamp(54px,8vw,120px); line-height:.95; letter-spacing:-.02em; margin:0; }
+  .pg-hero h1 em { font-style:italic; background:var(--grad); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .pg-hero .lead { max-width:58ch; color:var(--ink-2); font-size:18px; line-height:1.55; margin:28px 0 40px; }
+  .pg-hero .big-num { padding-top:80px; margin-top:48px; border-top:1px solid var(--hair); display:grid; grid-template-columns: repeat(4, 1fr); border-bottom:0; }
+  .pg-hero .big-num > div { padding:40px 0 48px; border-inline-end:1px solid var(--hair); padding-inline-end:24px; }
+  .pg-hero .big-num > div:last-child { border-inline-end:none; }
+  .pg-hero .big-num .k { font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--mut); }
+  .pg-hero .big-num .v { font-family:var(--serif); font-size:clamp(36px,4vw,58px); line-height:1; margin-top:16px; color:var(--ink); }
+  .pg-hero .big-num .sub { font-family:var(--mono); font-size:11px; color:var(--ink-2); margin-top:12px; letter-spacing:.06em; }
+  @media (max-width: 960px) { .pg-hero .big-num { grid-template-columns: 1fr 1fr; } }
+
+  /* earnings table */
+  .earn-table { width:100%; border-collapse:collapse; border:1px solid var(--hair); background:var(--paper); margin-top:32px; }
+  .earn-table th { text-align:start; font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--mut); padding:14px 24px; background:var(--bg-2); border-bottom:1px solid var(--hair); font-weight:500; }
+  .earn-table th:not(:first-child), .earn-table td:not(:first-child) { text-align:end; }
+  .earn-table td { padding:26px 24px; border-top:1px solid var(--hair); }
+  .earn-table td.gpu { font-family:var(--serif); font-size:22px; color:var(--ink); }
+  .earn-table td.num { font-family:var(--mono); font-size:15px; color:var(--ink); }
+  .earn-table td.num.hi { font-family:var(--serif); font-size:22px; color:var(--teal); }
+  .earn-table td.num .u { font-family:var(--mono); font-size:10.5px; color:var(--mut); margin-inline-start:6px; letter-spacing:.08em; }
+
+  /* steps */
+  .steps { margin-top:32px; border:1px solid var(--hair); background:var(--paper); }
+  .step-row { display:grid; grid-template-columns: 80px 1fr 40%; padding:36px 32px; border-top:1px solid var(--hair); gap:40px; align-items:start; }
+  .step-row:first-child { border-top:0; }
+  .step-row .n { font-family:var(--mono); font-size:12px; letter-spacing:.16em; color:var(--teal); align-self:start; }
+  .step-row .t { font-family:var(--serif); font-size:30px; line-height:1.1; color:var(--ink); margin:0; font-weight:400; }
+  .step-row .d { font-size:16px; line-height:1.55; color:var(--ink-2); margin:0; }
+  @media (max-width: 760px) { .step-row { grid-template-columns: 1fr; gap:16px; } }
+
+  /* calculator — province demand */
+  .earn-calc { display:grid; grid-template-columns: 1.1fr 1fr; gap:32px; margin-top:32px; }
+  .earn-inputs { border:1px solid var(--hair); background:var(--paper); padding:32px; }
+  .earn-inputs .calc-field + .calc-field { margin-top:28px; }
+  .earn-inputs label.lbl { display:block; font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--mut); margin:0 0 12px; }
+  .earn-inputs .pick { display:flex; flex-wrap:wrap; gap:8px; }
+  .earn-inputs .pick button { padding:10px 16px; border:1px solid var(--hair); background:transparent; color:var(--ink-2); cursor:pointer; font-family:var(--mono); font-size:12px; letter-spacing:.06em; }
+  .earn-inputs .pick button.on { background:var(--ink); color:var(--bg); border-color:var(--ink); }
+  .earn-inputs .calc-field .val { font-family:var(--serif); font-size:26px; color:var(--ink); margin-top:10px; }
+  .earn-out {
+    border:1px solid var(--line); background:var(--bg-2); padding:48px 40px;
+    display:flex; flex-direction:column; justify-content:center;
+  }
+  .earn-out .k { font-family:var(--mono); font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--mut); }
+  .earn-out .big { font-family:var(--serif); font-size:clamp(54px,8vw,96px); font-weight:400; line-height:1; margin:16px 0 6px; letter-spacing:-.02em; }
+  .earn-out .big .u { font-family:var(--mono); font-size:.28em; letter-spacing:.16em; color:var(--mut); margin-inline-start:10px; vertical-align:.5em; }
+  .earn-out .sub { font-family:var(--mono); font-size:12px; color:var(--mut); }
+  .earn-out .breakdown { display:grid; grid-template-columns: 1fr auto; gap:10px 24px; margin-top:32px; padding-top:24px; border-top:1px dashed var(--hair); }
+  .earn-out .breakdown .bk-k { color:var(--mut); font-family:var(--mono); font-size:11.5px; }
+  .earn-out .breakdown .bk-v { color:var(--ink); font-family:var(--mono); font-size:12.5px; }
+  @media (max-width: 960px) { .earn-calc { grid-template-columns: 1fr; } }
+
+  /* demand heatmap */
+  .heat { display:grid; grid-template-columns: repeat(4, 1fr); gap:0; border:1px solid var(--hair); background:var(--paper); margin-top:32px; }
+  .heat .cell { padding:32px 28px; border-inline-end:1px solid var(--hair); position:relative; }
+  .heat .cell:last-child { border-inline-end:none; }
+  .heat .cell .reg { font-family:var(--mono); font-size:11px; letter-spacing:.14em; color:var(--mut); }
+  .heat .cell .city { font-family:var(--serif); font-size:28px; margin:10px 0 20px; color:var(--ink); }
+  .heat .cell .bar-wrap { height:8px; background:var(--hair); position:relative; border-radius:0; }
+  .heat .cell .bar { height:100%; background:var(--grad); }
+  .heat .cell .val { display:flex; justify-content:space-between; margin-top:12px; font-family:var(--mono); font-size:11px; color:var(--ink-2); letter-spacing:.06em; }
+  .heat .cell .val b { color:var(--teal); font-weight:500; }
+  @media (max-width: 960px) { .heat { grid-template-columns: 1fr 1fr; } .heat .cell:nth-child(2) { border-inline-end:none; } .heat .cell:nth-child(-n+2) { border-bottom:1px solid var(--hair); } }
+  @media (max-width: 560px) { .heat { grid-template-columns: 1fr; } .heat .cell { border-inline-end:none; border-top:1px solid var(--hair); } .heat .cell:first-child { border-top:none; } }
+
+  /* FAQ */
+  .faq { margin-top:24px; border-top:1px solid var(--hair); }
+  .faq details { border-bottom:1px solid var(--hair); padding:24px 0; }
+  .faq summary {
+    cursor:pointer; list-style:none; display:flex; justify-content:space-between; align-items:baseline; gap:24px;
+    font-family:var(--serif); font-size:24px; font-weight:400; color:var(--ink);
+  }
+  .faq summary::-webkit-details-marker { display:none; }
+  .faq summary::after { content:"+"; font-family:var(--mono); font-size:24px; color:var(--mut); }
+  .faq details[open] summary::after { content:"−"; }
+  .faq details p { margin:14px 0 0; color:var(--ink-2); font-size:16.5px; line-height:1.65; max-width:70ch; }
+
+  .util-bar-top { position:fixed; top:16px; inset-inline-end:16px; display:flex; gap:8px; z-index:20; }
+</style>
+</head>
+<body>
+
+<div class="util-bar-top">
+  <span class="lang-pill" id="lang-pill">
+    <button data-l="en" class="on">EN</button>
+    <button data-l="ar">ع</button>
+  </span>
+</div>
+
+<div id="app"></div>
+
+<script src="../assets/i18n.js"></script>
+<script src="../assets/data.js"></script>
+<script src="../assets/data-public.js"></script>
+<script>window.DCP_LOGO_SRC = "../assets/dcp-logo-square.jpeg";</script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="../assets/dcp-kit.jsx"></script>
+<script type="text/babel" src="_shell.jsx"></script>
+<script type="text/babel" src="Providers.jsx"></script>
+
+</body>
+</html>

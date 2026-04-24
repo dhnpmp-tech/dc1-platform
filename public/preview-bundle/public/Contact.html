@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-lang="en" data-palette="midnight">
+<head>
+<meta charset="utf-8">
+<title>Contact — DCP</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Naskh+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/dcp-kit.css">
+<style>
+  .c-hero { padding: 120px 0 60px; border-bottom: 1px solid var(--hair); }
+  .c-hero h1 {
+    font-family: var(--serif); font-weight: 400; line-height: 1.02;
+    font-size: clamp(56px, 8vw, 112px); margin: 24px 0 0; color: var(--ink); letter-spacing: -0.02em;
+  }
+  .c-hero h1 em { color: var(--orange); font-style: italic; }
+
+  /* split: channels | form */
+  .c-split { display: grid; grid-template-columns: 0.95fr 1.2fr; gap: 0; border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); }
+  .c-split .left  { padding: 72px 56px; border-inline-end: 1px solid var(--hair); background: var(--paper); }
+  .c-split .right { padding: 72px 56px; background: var(--bg); }
+  .c-split .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; color: var(--mut); text-transform: uppercase; margin-bottom: 12px; }
+  .c-split h2 { font-family: var(--serif); font-weight: 400; font-size: 44px; line-height: 1.1; color: var(--ink); margin: 0 0 36px; letter-spacing: -.01em; }
+  @media (max-width: 900px) { .c-split { grid-template-columns: 1fr; } .c-split .left { border-inline-end:none; border-bottom:1px solid var(--hair); } }
+
+  /* channel cards */
+  .ch-list { display: flex; flex-direction: column; }
+  .ch-list .ch { padding: 24px 0; border-top: 1px solid var(--hair); display: grid; grid-template-columns: 120px 1fr auto; gap: 20px; align-items: start; }
+  .ch-list .ch:first-child { border-top: none; padding-top: 0; }
+  .ch-list .ch .k { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; color: var(--mut); text-transform: uppercase; padding-top: 10px; }
+  .ch-list .ch .v { font-family: var(--serif); font-size: 30px; color: var(--ink); text-decoration: none; letter-spacing: -.005em; }
+  .ch-list .ch .v:hover { color: var(--orange); }
+  .ch-list .ch .sub { font-family: var(--mono); font-size: 11px; color: var(--mut); margin-top: 4px; letter-spacing: .06em; }
+  .ch-list .ch .copy-btn {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .12em; padding: 6px 10px;
+    border: 1px solid var(--hair); background: transparent; color: var(--mut); cursor: pointer;
+    text-transform: uppercase; align-self: center;
+  }
+  .ch-list .ch .copy-btn:hover { color: var(--ink); border-color: var(--ink); }
+  .ch-list .ch .copy-btn.copied { color: var(--ok); border-color: var(--ok); }
+
+  /* office card */
+  .office {
+    margin-top: 64px; padding: 32px; border: 1px solid var(--hair); background: var(--bg-2);
+  }
+  .office .oh { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; color: var(--mut); text-transform: uppercase; }
+  .office .name { font-family: var(--serif); font-size: 28px; color: var(--ink); margin: 12px 0 4px; }
+  .office .addr { color: var(--ink-2); font-size: 15px; line-height: 1.6; margin: 0; }
+  .office .meta { display: flex; gap: 24px; margin-top: 18px; padding-top: 18px; border-top: 1px dashed var(--hair); font-family: var(--mono); font-size: 11px; color: var(--mut); letter-spacing: .08em; }
+
+  /* form */
+  .c-form { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .c-form .f-full { grid-column: 1 / -1; }
+  .c-form label { display: block; font-family: var(--mono); font-size: 11px; letter-spacing: .12em; color: var(--mut); text-transform: uppercase; margin-bottom: 8px; }
+  .c-form .note { color: var(--mut); font-family: var(--mono); font-size: 11px; letter-spacing: .06em; margin-top: -8px; }
+  .c-form textarea.input { min-height: 160px; resize: vertical; line-height: 1.55; }
+
+  .c-form .pick { display: flex; flex-wrap: wrap; gap: 8px; }
+  .c-form .pick button {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .1em; padding: 10px 14px;
+    border: 1px solid var(--hair); background: var(--bg); color: var(--mut); cursor: pointer;
+    text-transform: uppercase;
+  }
+  .c-form .pick button.on { color: var(--ink); border-color: var(--ink); background: var(--bg-2); }
+
+  .c-form .submit-row { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; margin-top: 12px; }
+  .c-form .submit-row .priv { font-family: var(--mono); font-size: 11px; color: var(--mut); max-width: 44ch; letter-spacing: .04em; }
+
+  .success {
+    padding: 48px; border: 1px solid color-mix(in oklab, var(--ok) 40%, transparent);
+    background: color-mix(in oklab, var(--ok) 8%, transparent);
+  }
+  .success .k { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; color: var(--ok); text-transform: uppercase; }
+  .success h3 { font-family: var(--serif); font-weight: 400; font-size: 38px; color: var(--ink); margin: 12px 0 16px; line-height: 1.15; }
+  .success p { color: var(--ink-2); font-size: 16px; line-height: 1.6; margin: 0 0 8px; }
+
+  /* offices quick strip */
+  .offices { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--hair); margin: 72px 0 120px; background: var(--paper); }
+  .offices .o { padding: 40px 36px; border-inline-end: 1px solid var(--hair); }
+  .offices .o:last-child { border-inline-end: none; }
+  .offices .o .code { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; color: var(--orange); text-transform: uppercase; }
+  .offices .o .city { font-family: var(--serif); font-size: 34px; color: var(--ink); margin: 10px 0 14px; }
+  .offices .o .addr { color: var(--ink-2); font-size: 14px; line-height: 1.55; }
+  .offices .o .hours { font-family: var(--mono); font-size: 11px; color: var(--mut); margin-top: 16px; padding-top: 16px; border-top: 1px dashed var(--hair); letter-spacing: .06em; }
+  @media (max-width: 900px) { .offices { grid-template-columns: 1fr; } .offices .o { border-inline-end: none; border-bottom: 1px solid var(--hair); } .offices .o:last-child { border-bottom: none; } }
+
+  .util-bar-top { position:fixed; top:16px; inset-inline-end:16px; display:flex; gap:8px; z-index:20; }
+</style>
+</head>
+<body>
+
+<div class="util-bar-top">
+  <span class="lang-pill" id="lang-pill">
+    <button data-l="en" class="on">EN</button>
+    <button data-l="ar">ع</button>
+  </span>
+</div>
+
+<div id="app"></div>
+
+<script src="../assets/i18n.js"></script>
+<script src="../assets/data.js"></script>
+<script src="../assets/data-public.js"></script>
+<script>window.DCP_LOGO_SRC = "../assets/dcp-logo-square.jpeg";</script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="../assets/dcp-kit.jsx"></script>
+<script type="text/babel" src="_shell.jsx"></script>
+<script type="text/babel" src="Contact.jsx"></script>
+
+</body>
+</html>

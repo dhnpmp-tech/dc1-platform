@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>DCP Ops — Internal Console</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../assets/dcp-kit.css" />
+<link rel="stylesheet" href="../assets/ops-shell.css" />
+<style>
+  body { background: var(--bg); color: var(--ink); font-family: var(--sans); margin: 0; min-height: 100vh; }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 48px 40px 80px; }
+
+  .hd { display: grid; grid-template-columns: 1fr auto; gap: 40px; align-items: end; padding-bottom: 28px; border-bottom: 1px solid var(--hair); margin-bottom: 36px; }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand-glyph { width: 44px; height: 44px; background: var(--ink); color: var(--accent); display: flex; align-items: center; justify-content: center; font-family: var(--serif); font-style: italic; font-size: 24px; }
+  .brand-t { font-family: var(--mono); font-size: 11px; letter-spacing: .2em; color: var(--mut); text-transform: uppercase; }
+  .brand-s { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; color: var(--accent); text-transform: uppercase; margin-top: 2px; }
+
+  h1 { font-family: var(--serif); font-weight: 400; font-size: 58px; line-height: 1.02; letter-spacing: -.015em; margin: 18px 0 10px; }
+  h1 em { font-style: italic; color: var(--accent); }
+  .lede { font-size: 16px; line-height: 1.55; color: var(--ink-2); max-width: 640px; }
+  .status-chip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--hair); font-family: var(--mono); font-size: 11px; color: var(--mut); letter-spacing: .06em; }
+  .status-chip .dot { width: 8px; height: 8px; background: var(--green); border-radius: 50%; box-shadow: 0 0 0 3px color-mix(in oklab, var(--green) 25%, transparent); }
+
+  .section-hd { display: grid; grid-template-columns: 1fr auto; align-items: baseline; margin-bottom: 20px; }
+  .section-eb { font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em; color: var(--accent); text-transform: uppercase; }
+  .section-t { font-family: var(--serif); font-size: 30px; line-height: 1.1; margin-top: 4px; }
+  .section-t em { font-style: italic; color: var(--accent); }
+  .section-meta { font-family: var(--mono); font-size: 11px; color: var(--mut); }
+
+  .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; margin-bottom: 60px; }
+  .tile { background: var(--paper); border: 1px solid var(--hair); padding: 20px 22px; text-decoration: none; color: inherit; display: flex; flex-direction: column; transition: border-color .15s, transform .2s; position: relative; overflow: hidden; min-height: 150px; }
+  .tile:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .tile.flagship { grid-column: span 6; min-height: 280px; background: var(--paper); padding: 28px 30px; }
+  .tile.flagship.alt { background: linear-gradient(135deg, color-mix(in oklab, var(--accent) 8%, var(--paper)), var(--paper)); }
+  .tile.lg { grid-column: span 4; min-height: 180px; }
+  .tile.md { grid-column: span 4; }
+  .tile.sm { grid-column: span 3; }
+  .tile-eb { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; color: var(--mut); text-transform: uppercase; }
+  .tile-t { font-family: var(--serif); font-size: 22px; line-height: 1.15; letter-spacing: -.01em; margin-top: 6px; }
+  .tile-t em { font-style: italic; color: var(--accent); }
+  .tile.flagship .tile-t { font-size: 34px; }
+  .tile.lg .tile-t { font-size: 26px; }
+  .tile-d { font-size: 12px; color: var(--ink-2); line-height: 1.5; margin-top: 8px; }
+  .tile-stat { font-family: var(--mono); font-size: 11px; color: var(--accent); margin-top: auto; padding-top: 14px; letter-spacing: .04em; }
+  .tile-stat .dim { color: var(--mut); }
+
+  .flag-ring { position: absolute; top: 16px; right: 16px; font-family: var(--mono); font-size: 9.5px; letter-spacing: .14em; color: var(--accent); padding: 3px 6px; border: 1px solid color-mix(in oklab, var(--accent) 40%, transparent); text-transform: uppercase; }
+
+  .footer { margin-top: 80px; padding-top: 28px; border-top: 1px solid var(--hair); display: grid; grid-template-columns: 1fr auto; gap: 20px; align-items: end; }
+  .footer-t { font-family: var(--serif); font-size: 16px; color: var(--ink-2); font-style: italic; }
+  .footer-m { font-family: var(--mono); font-size: 10px; letter-spacing: .12em; color: var(--mut); text-transform: uppercase; text-align: end; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="hd">
+      <div>
+        <div class="brand">
+          <div class="brand-glyph">D</div>
+          <div>
+            <div class="brand-t">DCP · Internal Console</div>
+            <div class="brand-s">OPS.DCP.SA · PROD · v2.4.11 · ab1e0f6</div>
+          </div>
+        </div>
+        <h1>The operator's <em>view</em></h1>
+        <p class="lede">
+          Everything DCP employees see. Fleet health across five Saudi regions, the live job stream, KYB and compliance queues, payouts, incidents, and every lever that moves the platform — for 6 operators on a rotating 8-hour shift.
+        </p>
+      </div>
+      <div style="text-align:end">
+        <div class="status-chip"><span class="dot"></span> All regions operational</div>
+        <div style="font-family:var(--mono); font-size:11px; color:var(--mut); margin-top:10px; letter-spacing:.06em">14 screens · 1 flagship fleet map</div>
+      </div>
+    </header>
+
+    <!-- FLAGSHIP / DAILY DRIVERS -->
+    <div class="section-hd">
+      <div>
+        <div class="section-eb">The daily three</div>
+        <div class="section-t">What the on-call sees <em>first</em></div>
+      </div>
+      <div class="section-meta">flagship screens</div>
+    </div>
+
+    <div class="grid">
+      <a href="Overview.html" class="tile flagship alt">
+        <div class="tile-eb">Live · Kingdom-wide</div>
+        <div class="tile-t">Operating <em>picture</em></div>
+        <div class="tile-d">Single-pane view of the whole platform — GMV, net, p50/p95, tokens/sec, error rate. KPIs refresh every 30s; incidents and anomalies stream live. The home for the on-call.</div>
+        <div class="tile-stat">KPIs · regions · incidents · revenue · on-call · activity <span class="dim">→</span></div>
+      </a>
+
+      <a href="Fleet Map.html" class="tile flagship">
+        <div class="flag-ring">Flagship · map</div>
+        <div class="tile-eb">Geographic</div>
+        <div class="tile-t">Fleet map · <em>Saudi Arabia</em></div>
+        <div class="tile-d">Every provider, rig, and GPU plotted across five regions — Riyadh, Jeddah, Dammam, Madinah, Abha. Click a region to drill into its health, capacity, and hotlist.</div>
+        <div class="tile-stat">487 providers · 1,850 GPUs · 5 regions <span class="dim">→</span></div>
+      </a>
+
+      <a href="Jobs Monitor.html" class="tile flagship alt" style="grid-column: span 12;">
+        <div class="flag-ring">Flagship · live stream</div>
+        <div class="tile-eb">Real time</div>
+        <div class="tile-t">Jobs monitor · platform-<em>wide stream</em></div>
+        <div class="tile-d">Every inference and batch request on DCP, streamed in real time. Filter by anomaly (slow, retry, hold-overrun, policy-blocked, PDPL-held), inspect routing traces, and escalate with one click.</div>
+        <div class="tile-stat">89,200 rpm · 370k tok/s · 6 anomaly classes · detail panel <span class="dim">→</span></div>
+      </a>
+    </div>
+
+    <!-- DIRECTORY -->
+    <div class="section-hd">
+      <div>
+        <div class="section-eb">Directory</div>
+        <div class="section-t">Who's on the <em>platform</em></div>
+      </div>
+      <div class="section-meta">providers · customers · models</div>
+    </div>
+
+    <div class="grid">
+      <a href="Providers.html" class="tile lg">
+        <div class="tile-eb">KYB queue + directory</div>
+        <div class="tile-t">Providers &amp; <em>KYB</em></div>
+        <div class="tile-d">Review CR, VAT, IBAN, and ID docs for incoming providers. Approve, hold, or reject; then browse the live directory by region and tier.</div>
+        <div class="tile-stat">9 in queue · 487 in directory <span class="dim">→</span></div>
+      </a>
+      <a href="Customers.html" class="tile lg">
+        <div class="tile-eb">Accounts</div>
+        <div class="tile-t">Customers &amp; <em>usage</em></div>
+        <div class="tile-d">Orgs billing through DCP — plan, MRR, arrears, seats. Impersonate, adjust limits, issue credits, suspend.</div>
+        <div class="tile-stat">114 active · SAR 487k MRR · 3 in arrears <span class="dim">→</span></div>
+      </a>
+      <a href="Models Catalog.html" class="tile lg">
+        <div class="tile-eb">Catalog</div>
+        <div class="tile-t">Models &amp; <em>approvals</em></div>
+        <div class="tile-d">Every model live on DCP plus pending requests. Pricing, margin, PDPL &amp; red-team status, regional deployment.</div>
+        <div class="tile-stat">7 GA · 1 beta · 3 in review <span class="dim">→</span></div>
+      </a>
+    </div>
+
+    <!-- FINANCE / COMPLIANCE / INCIDENTS -->
+    <div class="section-hd">
+      <div>
+        <div class="section-eb">Ledgers</div>
+        <div class="section-t">Money, policy, and <em>incidents</em></div>
+      </div>
+      <div class="section-meta">finance · compliance · response</div>
+    </div>
+
+    <div class="grid">
+      <a href="Billing and Payouts.html" class="tile md">
+        <div class="tile-eb">Finance</div>
+        <div class="tile-t">Billing &amp; <em>payouts</em></div>
+        <div class="tile-d">Cycle reconciliation, disputes, SAMA release file. 8 providers flagged for review this cycle.</div>
+        <div class="tile-stat">SAR 892,140 pending · 4 disputes <span class="dim">→</span></div>
+      </a>
+      <a href="Pricing Control.html" class="tile md">
+        <div class="tile-eb">Rate cards</div>
+        <div class="tile-t">Pricing &amp; <em>peg</em></div>
+        <div class="tile-d">Per-model rate cards, platform take, and the SAR/USD peg used for stablecoin settlement.</div>
+        <div class="tile-stat">6 cards · SAR/USD 3.751 · Δ 6bp <span class="dim">→</span></div>
+      </a>
+      <a href="Incidents.html" class="tile md">
+        <div class="tile-eb">Status</div>
+        <div class="tile-t">Incidents &amp; <em>status</em></div>
+      <div class="tile-d">Compose updates that publish to status.dcp.sa and customer webhooks in ≤ 10 s. Postmortem templates linked.</div>
+        <div class="tile-stat">1 active · 1 scheduled · 22 resolved/30d <span class="dim">→</span></div>
+      </a>
+      <a href="Compliance.html" class="tile md">
+        <div class="tile-eb">Policy</div>
+        <div class="tile-t">PDPL &amp; <em>red-team</em></div>
+        <div class="tile-d">Privacy, content-policy, and red-team review queue. Every action ladders up to SDAIA with signed logs.</div>
+        <div class="tile-stat">12 open · 2 SLA-at-risk <span class="dim">→</span></div>
+      </a>
+      <a href="On-Call.html" class="tile md">
+        <div class="tile-eb">Response</div>
+        <div class="tile-t">On-call <em>rotation</em></div>
+        <div class="tile-d">Who pages who, right now. 8-hour shifts across the SRE team with a shift-swap flow.</div>
+        <div class="tile-stat">Ammar Al-Sayegh · until 22:00 AST <span class="dim">→</span></div>
+      </a>
+      <a href="Support Tickets.html" class="tile md">
+        <div class="tile-eb">Success</div>
+        <div class="tile-t">Support <em>tickets</em></div>
+        <div class="tile-d">Inbound from renters and providers. Enterprise SLA'd to 1-hour first-response — they sit at the top.</div>
+        <div class="tile-stat">34 open · 6 high · 1.8h avg response <span class="dim">→</span></div>
+      </a>
+    </div>
+
+    <!-- PLATFORM CONTROLS -->
+    <div class="section-hd">
+      <div>
+        <div class="section-eb">Controls</div>
+        <div class="section-t">Rollouts &amp; <em>provenance</em></div>
+      </div>
+      <div class="section-meta">flags · audit</div>
+    </div>
+
+    <div class="grid">
+      <a href="Feature Flags.html" class="tile md" style="grid-column: span 6;">
+        <div class="tile-eb">Experiments</div>
+        <div class="tile-t">Feature <em>flags</em></div>
+        <div class="tile-d">Rollout state for every experiment and gated feature on DCP. Percentages evaluated per-org-hashed-bucket; changes propagate in ≤ 10 s.</div>
+        <div class="tile-stat">8 flags · 5 GA · 3 canary <span class="dim">→</span></div>
+      </a>
+      <a href="Admin Audit Log.html" class="tile md" style="grid-column: span 6;">
+        <div class="tile-eb">Security</div>
+        <div class="tile-t">Admin <em>audit log</em></div>
+        <div class="tile-d">Every internal action by a DCP operator or system service — immutable, signed hourly, 7-year retention per PDPL + SAMA.</div>
+        <div class="tile-stat">14 events shown · signed · verified <span class="dim">→</span></div>
+      </a>
+    </div>
+
+    <footer class="footer">
+      <div class="footer-t">The things no customer will ever see — but every one of them depends on.</div>
+      <div class="footer-m">DCP · OPS · ops.dcp.sa · internal only</div>
+    </footer>
+  </div>
+</body>
+</html>

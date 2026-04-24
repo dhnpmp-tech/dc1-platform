@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>DCP Ops — On-Call</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../assets/dcp-kit.css" />
+<link rel="stylesheet" href="../assets/ops-shell.css" />
+<style>
+.oc-hero { background: var(--paper); border: 1px solid var(--hair); padding: 28px 32px; display: grid; grid-template-columns: auto 1fr auto; gap: 28px; align-items: center; }
+.oc-avatar { width: 88px; height: 88px; background: linear-gradient(135deg, color-mix(in oklab, var(--accent) 40%, var(--paper)), var(--paper)); border: 1px solid var(--hair-2); display: flex; align-items: center; justify-content: center; font-family: var(--serif); font-style: italic; font-size: 38px; color: var(--accent); }
+.oc-name { font-family: var(--serif); font-size: 40px; line-height: 1.05; letter-spacing: -.01em; }
+.oc-name em { font-style: italic; color: var(--accent); }
+.oc-meta { font-family: var(--mono); font-size: 11px; color: var(--mut); letter-spacing: .04em; margin-top: 6px; }
+.oc-pager { font-family: var(--mono); font-size: 20px; color: var(--ink); letter-spacing: .02em; }
+
+.oc-shift { display: grid; grid-template-columns: 220px 1fr 1fr 170px; gap: 16px; padding: 14px 16px; border-bottom: 1px solid var(--hair); align-items: center; }
+.oc-shift.current { background: color-mix(in oklab, var(--accent) 6%, transparent); }
+.oc-shift .sh { font-family: var(--mono); font-size: 11px; color: var(--accent); letter-spacing: .04em; }
+.oc-shift .pm { font-family: var(--serif); font-size: 18px; color: var(--ink); }
+.oc-shift .sc { color: var(--ink-2); font-size: 13px; }
+</style>
+</head>
+<body class="ops">
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../assets/data-ops-admin.js"></script>
+<script type="text/babel" src="../assets/ops-shell.jsx"></script>
+<script type="text/babel">
+const A = window.DCP_OPS_ADMIN;
+const OC = A.oncall;
+const { OpsShell, Chip, Kpi } = window;
+const primaryInitials = OC.rotation[0].primary.split(" ").map(w=>w[0]).join("");
+
+function App() {
+  return (
+    <OpsShell current="oncall" crumb="On-Call" alarms={1} env="PROD" build={A.build}>
+      <div className="ops-page">
+        <div className="ops-page-hd">
+          <div>
+            <div className="ops-page-eb">Ops · Response</div>
+            <h1 className="ops-page-h1">On-call <em>rotation</em></h1>
+            <div className="ops-page-lede">
+              Who pages who, right now. 8-hour shifts rotate through the SRE on-call team. Page the primary first; escalate to secondary after 5 minutes unacked.
+            </div>
+          </div>
+          <div className="ops-page-actions">
+            <button className="ops-btn">Escalation policy</button>
+            <button className="ops-btn primary">Swap shift</button>
+          </div>
+        </div>
+
+        <div className="oc-hero" style={{marginBottom:14}}>
+          <div className="oc-avatar">{primaryInitials}</div>
+          <div>
+            <div className="mono" style={{fontSize:10, color:"var(--green)", letterSpacing:".12em"}}>● CURRENTLY ON-CALL · SINCE {A.on_call.since}</div>
+            <div className="oc-name"><em>{OC.rotation[0].primary}</em></div>
+            <div className="oc-meta">shift: {OC.rotation[0].shift} · secondary {OC.rotation[0].secondary}</div>
+          </div>
+          <div style={{textAlign:"end"}}>
+            <div className="mono dim" style={{fontSize:10, letterSpacing:".12em", textTransform:"uppercase", marginBottom:4}}>Pager</div>
+            <div className="oc-pager">{OC.rotation[0].pager}</div>
+            <button className="ops-btn sm primary" style={{marginTop:10}}>Page primary</button>
+          </div>
+        </div>
+
+        <div className="ops-grid c4" style={{marginBottom:14}}>
+          <Kpi label="Pages · 24h"     value={OC.pages_24h} delta="Avg 2.4/day" deltaKind="neutral" em />
+          <Kpi label="MTTR · 30d"      value={OC.mttr_30d_min + " min"} delta="target ≤ 20" />
+          <Kpi label="Incidents · 7d"  value={OC.incidents_7d} delta="3 minor · 1 major" deltaKind="neutral" />
+          <Kpi label="Handoffs · 30d"  value={OC.handoffs_30d} delta="clean · 0 missed" />
+        </div>
+
+        <div className="ops-card" style={{padding:0}}>
+          <div style={{padding:"14px 18px", borderBottom:"1px solid var(--hair)"}}>
+            <div className="mono" style={{fontSize:10, letterSpacing:".12em", color:"var(--mut)", textTransform:"uppercase"}}>Upcoming rotation</div>
+            <div className="ops-card-t" style={{fontSize:20, marginTop:2}}>Next 5 shifts</div>
+          </div>
+          {OC.rotation.map((s,i) => (
+            <div key={i} className={"oc-shift " + (s.active ? "current" : "")}>
+              <span className="sh">{s.active ? "● NOW · " : ""}{s.shift}</span>
+              <div>
+                <div className="mono dim" style={{fontSize:10, letterSpacing:".1em"}}>PRIMARY</div>
+                <div className="pm">{s.primary}</div>
+              </div>
+              <div>
+                <div className="mono dim" style={{fontSize:10, letterSpacing:".1em"}}>SECONDARY</div>
+                <div className="sc">{s.secondary}</div>
+              </div>
+              <div style={{textAlign:"end"}}>
+                <div className="mono" style={{fontSize:11, color:"var(--ink-2)"}}>{s.pager}</div>
+                {!s.active && <button className="ops-btn sm" style={{marginTop:4}}>Request swap</button>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </OpsShell>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

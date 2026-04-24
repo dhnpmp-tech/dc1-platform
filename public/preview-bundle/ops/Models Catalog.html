@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>DCP Ops — Models Catalog</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../assets/dcp-kit.css" />
+<link rel="stylesheet" href="../assets/ops-shell.css" />
+</head>
+<body class="ops">
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../assets/data-ops-admin.js"></script>
+<script type="text/babel" src="../assets/ops-shell.jsx"></script>
+<script type="text/babel">
+const { useState } = React;
+const A = window.DCP_OPS_ADMIN;
+const { OpsShell, Chip, Bar, Kpi } = window;
+const fmt = n => n==null ? "—" : n.toLocaleString('en-US');
+
+function App() {
+  const [tab, setTab] = useState("catalog");
+  const [sel, setSel] = useState("allam-7b");
+  const active = A.models_admin.find(m => m.id === sel);
+
+  return (
+    <OpsShell current="models" crumb="Models Catalog" alarms={1} env="PROD" build={A.build}>
+      <div className="ops-page">
+        <div className="ops-page-hd">
+          <div>
+            <div className="ops-page-eb">Ops · Catalog</div>
+            <h1 className="ops-page-h1">Models &amp; <em>approvals</em></h1>
+            <div className="ops-page-lede">
+              Every model live on DCP, every request pending approval. Pricing, margin, PDPL/red-team status, and regional deployment — managed here.
+            </div>
+          </div>
+          <div className="ops-page-actions">
+            <button className="ops-btn">Policy runbook</button>
+            <button className="ops-btn primary">+ Propose model</button>
+          </div>
+        </div>
+
+        <div className="ops-grid c5" style={{marginBottom:14}}>
+          <Kpi label="Models · GA"          value={A.models_admin.filter(m=>m.status==="ga").length} em />
+          <Kpi label="Beta / allow-list"    value={A.models_admin.filter(m=>m.status==="beta").length} />
+          <Kpi label="Pending review"       value={A.models_admin.filter(m=>m.status==="pending").length + A.model_queue.length} delta={A.model_queue.length + " in queue"} deltaKind="neutral" />
+          <Kpi label="Model revenue · 30d"  value={"SAR " + fmt(A.models_admin.reduce((s,m)=>s+m.sar_30d, 0))} delta="+11.8% MoM" />
+          <Kpi label="Avg platform margin"  value="25%" delta="peg-indexed" deltaKind="neutral" />
+        </div>
+
+        <div className="ops-toolbar" style={{marginBottom:14}}>
+          <div className="ops-filters">
+            <button className={"ops-filter " + (tab==="catalog"?"on":"")} onClick={()=>setTab("catalog")}>Catalog <span className="ct">{A.models_admin.length}</span></button>
+            <button className={"ops-filter " + (tab==="queue"?"on":"")} onClick={()=>setTab("queue")}>Review queue <span className="ct">{A.model_queue.length}</span></button>
+          </div>
+        </div>
+
+        {tab === "catalog" && (
+          <div style={{display:"grid", gridTemplateColumns:"1fr 380px", gap:12}}>
+            <div className="ops-card" style={{padding:0}}>
+              <table className="ops-tbl">
+                <thead><tr>
+                  <th>Model</th><th>Vendor</th><th>Status</th><th>Visibility</th>
+                  <th className="num">In / Out · SAR/1M</th>
+                  <th className="num">Margin</th>
+                  <th className="num">Jobs · 30d</th>
+                  <th className="num">SAR · 30d</th>
+                  <th>Regions</th>
+                </tr></thead>
+                <tbody>
+                  {A.models_admin.map(m => (
+                    <tr key={m.id} onClick={()=>setSel(m.id)} style={{cursor:"pointer", background: sel===m.id ? "color-mix(in oklab, var(--accent) 8%, transparent)" : ""}}>
+                      <td>
+                        <div style={{color:"var(--ink)"}}>{m.name}</div>
+                        <div className="mono dim" style={{fontSize:10}}>{m.id}</div>
+                      </td>
+                      <td>{m.vendor}</td>
+                      <td><Chip kind={m.status==="ga"?"ok":m.status==="beta"?"warn":"err"} dot>{m.status}</Chip></td>
+                      <td><span className="mono" style={{fontSize:10, color:"var(--mut)"}}>{m.visibility}</span></td>
+                      <td className="num mono" style={{fontSize:11}}>
+                        {m.price_per_image
+                          ? <>SAR {m.price_per_image.toFixed(2)} <span className="dim">/img</span></>
+                          : <>{m.price_in==null?"—":m.price_in.toFixed(2)} / {m.price_out==null?"—":m.price_out.toFixed(2)}</>}
+                      </td>
+                      <td className="num">{(m.margin*100).toFixed(0)}%</td>
+                      <td className="num">{fmt(m.jobs_30d)}</td>
+                      <td className="num">{fmt(m.sar_30d)}</td>
+                      <td><span className="mono" style={{fontSize:10, color:"var(--accent)"}}>{m.deployed_on.map(r=>r.toUpperCase()).join(" · ") || "—"}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {active && (
+              <div className="ops-card" style={{position:"sticky", top:70, alignSelf:"start"}}>
+                <div style={{display:"flex", gap:6, marginBottom:8}}>
+                  <Chip kind={active.status==="ga"?"ok":active.status==="beta"?"warn":"err"} dot>{active.status}</Chip>
+                  <Chip kind="mut">{active.visibility}</Chip>
+                </div>
+                <div className="ops-card-t" style={{fontSize:22}}>{active.name}</div>
+                <div className="mono dim" style={{fontSize:10, marginTop:4, letterSpacing:".05em"}}>{active.id} · {active.vendor} · approved {active.approval_date || "—"}</div>
+
+                <div style={{marginTop:14, paddingTop:10, borderTop:"1px solid var(--hair)"}}>
+                  <div style={{fontFamily:"var(--mono)", fontSize:10, color:"var(--mut)", letterSpacing:".12em", textTransform:"uppercase", marginBottom:6}}>Pricing</div>
+                  <div className="ops-dl">
+                    {active.price_per_image ? (
+                      <><dt>Per image</dt><dd>SAR {active.price_per_image.toFixed(2)}</dd></>
+                    ) : (
+                      <>
+                        <dt>Input · 1M tok</dt><dd>SAR {active.price_in==null?"—":active.price_in.toFixed(2)}</dd>
+                        <dt>Output · 1M tok</dt><dd>SAR {active.price_out==null?"—":active.price_out.toFixed(2)}</dd>
+                      </>
+                    )}
+                    <dt>Platform take</dt><dd>{(active.margin*100).toFixed(0)}%</dd>
+                  </div>
+                </div>
+
+                <div style={{marginTop:14, paddingTop:10, borderTop:"1px solid var(--hair)"}}>
+                  <div style={{fontFamily:"var(--mono)", fontSize:10, color:"var(--mut)", letterSpacing:".12em", textTransform:"uppercase", marginBottom:6}}>Policy</div>
+                  <div style={{fontFamily:"var(--mono)", fontSize:11, color:"var(--ink-2)", lineHeight:1.7}}>{active.policy.split(", ").map((p,i) => <div key={i}>· {p}</div>)}</div>
+                </div>
+
+                <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginTop:16}}>
+                  <button className="ops-btn sm">Adjust price</button>
+                  <button className="ops-btn sm">Rotate weights</button>
+                  <button className="ops-btn sm danger">Deprecate</button>
+                  <button className="ops-btn sm primary">Edit policy</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === "queue" && (
+          <div className="ops-card" style={{padding:0}}>
+            <table className="ops-tbl">
+              <thead><tr><th>Model id</th><th>Vendor</th><th>Tags</th><th>Submitted</th><th>Blocker</th><th></th></tr></thead>
+              <tbody>
+                {A.model_queue.map(q => (
+                  <tr key={q.id}>
+                    <td><span className="mono" style={{color:"var(--accent)"}}>{q.id}</span></td>
+                    <td>{q.vendor}</td>
+                    <td><div style={{display:"flex", gap:4}}>{q.tags.map(t => <Chip key={t} kind="mut">{t}</Chip>)}</div></td>
+                    <td className="mono dim" style={{fontSize:11}}>{q.submitted}</td>
+                    <td style={{color:"var(--amber)"}}>{q.blocker}</td>
+                    <td><button className="ops-btn sm">Progress →</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </OpsShell>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

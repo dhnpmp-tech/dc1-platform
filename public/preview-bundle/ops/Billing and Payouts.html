@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>DCP Ops — Billing &amp; Payouts</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../assets/dcp-kit.css" />
+<link rel="stylesheet" href="../assets/ops-shell.css" />
+<style>
+.po-flag { display: inline-block; font-family: var(--mono); font-size: 10px; color: var(--amber); padding: 2px 6px; border: 1px solid color-mix(in oklab, var(--amber) 40%, transparent); letter-spacing: .04em; }
+.po-flag.err { color: var(--red); border-color: color-mix(in oklab, var(--red) 40%, transparent); }
+
+.po-bars { display:flex; gap:4px; align-items:flex-end; height: 80px; padding-top: 20px; }
+.po-bars .b { flex:1; background: color-mix(in oklab, var(--accent) 50%, transparent); min-height: 6px; border-top: 2px solid var(--accent); position: relative; }
+.po-bars .b::after { content: attr(data-l); position: absolute; top: -16px; left: 50%; transform: translateX(-50%); font-family: var(--mono); font-size: 9px; color: var(--mut); }
+.po-bars .b span { position:absolute; bottom: -18px; left: 50%; transform: translateX(-50%); font-family: var(--mono); font-size: 9.5px; color: var(--mut); white-space: nowrap; }
+</style>
+</head>
+<body class="ops">
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../assets/data-ops-admin.js"></script>
+<script type="text/babel" src="../assets/ops-shell.jsx"></script>
+<script type="text/babel">
+const { useState } = React;
+const A = window.DCP_OPS_ADMIN;
+const { OpsShell, Chip, Bar, Kpi } = window;
+const fmt = n => n.toLocaleString('en-US');
+
+function App() {
+  const [state, setState] = useState("all");
+  const rows = state === "all" ? A.payouts : A.payouts.filter(p => p.status === state);
+  const maxTotal = Math.max(...A.payout_totals_90d.map(t=>t.total));
+
+  return (
+    <OpsShell current="billing" crumb="Billing & Payouts" alarms={1} env="PROD" build={A.build}>
+      <div className="ops-page">
+        <div className="ops-page-hd">
+          <div>
+            <div className="ops-page-eb">Ops · Finance</div>
+            <h1 className="ops-page-h1">Billing &amp; <em>payouts</em></h1>
+            <div className="ops-page-lede">
+              Provider reconciliation for the current cycle ({A.payout_cycle.period}). Review flagged payouts, resolve disputes, and release the cycle to banking.
+            </div>
+          </div>
+          <div className="ops-page-actions">
+            <button className="ops-btn">Export SAMA file</button>
+            <button className="ops-btn primary">Release cycle</button>
+          </div>
+        </div>
+
+        <div className="ops-grid c4" style={{marginBottom:14}}>
+          <Kpi label="Pending this cycle" value={"SAR " + fmt(A.payout_cycle.total_pending_sar)} delta={A.payout_cycle.providers_included + " providers"} em />
+          <Kpi label="Cycle closes in"    value={A.payout_cycle.ends_in_h + "h"}              delta={A.payout_cycle.next_release} deltaKind="neutral" />
+          <Kpi label="Disputes open"      value={A.payout_cycle.disputes_open}                delta="SLA 72h" deltaKind="down" />
+          <Kpi label="Last 6 cycles"      value={"SAR " + fmt(A.payout_totals_90d.reduce((s,c)=>s+c.total, 0) / 1000).split(".")[0] + "k"} delta="+11.4% QoQ" />
+        </div>
+
+        <div style={{display:"grid", gridTemplateColumns:"1fr 320px", gap:12, marginBottom:14}}>
+          <div className="ops-card">
+            <div className="ops-card-eb">Cycle totals · last 90 days</div>
+            <div className="ops-card-t" style={{fontSize:22}}>Payout volume <em>trending up</em></div>
+            <div className="po-bars" style={{marginTop:22}}>
+              {A.payout_totals_90d.map((c,i) => (
+                <div key={c.cycle} className="b" style={{height: (c.total / maxTotal * 100) + "%"}} data-l={"SAR " + Math.round(c.total/1000) + "k"}>
+                  <span>{c.cycle}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="ops-card">
+            <div className="ops-card-eb">Peg</div>
+            <div className="ops-card-t"><em>SAR / USD = {A.pricing.peg_sar_usd}</em></div>
+            <div className="mono dim" style={{fontSize:11, marginTop:6}}>Drift {A.pricing.peg_drift_bps}bp · tolerance ±10bp</div>
+            <div style={{marginTop:14, paddingTop:10, borderTop:"1px solid var(--hair)"}}>
+              <div className="mono dim" style={{fontSize:10, letterSpacing:".12em", textTransform:"uppercase", marginBottom:6}}>Settlement split</div>
+              <div style={{display:"flex", height:28, border:"1px solid var(--hair-2)"}}>
+                <div style={{flex:75, background:"var(--accent)", color:"var(--bg)", fontFamily:"var(--mono)", fontSize:10, display:"flex", alignItems:"center", justifyContent:"center", letterSpacing:".08em"}}>PROVIDER 75%</div>
+                <div style={{flex:25, background:"var(--bg-2)", color:"var(--ink)", fontFamily:"var(--mono)", fontSize:10, display:"flex", alignItems:"center", justifyContent:"center", letterSpacing:".08em"}}>DCP 25%</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="ops-toolbar">
+          <div className="ops-filters">
+            <button className={"ops-filter " + (state==="all"?"on":"")} onClick={()=>setState("all")}>All <span className="ct">{A.payouts.length}</span></button>
+            {["approved","review","dispute"].map(s => (
+              <button key={s} className={"ops-filter " + (state===s?"on":"")} onClick={()=>setState(s)}>{s} <span className="ct">{A.payouts.filter(p=>p.status===s).length}</span></button>
+            ))}
+          </div>
+          <input className="ops-search" placeholder="provider / payout id / IBAN tail…" />
+        </div>
+
+        <div className="ops-card" style={{padding:0}}>
+          <table className="ops-tbl">
+            <thead><tr>
+              <th>Payout</th><th>Provider</th>
+              <th className="num">Jobs</th>
+              <th className="num">Gross</th>
+              <th className="num">Fees</th>
+              <th className="num">Net</th>
+              <th>IBAN</th><th>Status</th><th></th>
+            </tr></thead>
+            <tbody>
+              {rows.map(p => (
+                <tr key={p.id}>
+                  <td><span className="mono" style={{color:"var(--accent)"}}>{p.id}</span></td>
+                  <td>
+                    <div>{p.name}</div>
+                    <div className="mono dim" style={{fontSize:10}}>{p.provider}</div>
+                  </td>
+                  <td className="num">{fmt(p.jobs)}</td>
+                  <td className="num mono">SAR {fmt(p.gross_sar)}</td>
+                  <td className="num mono dim">SAR {fmt(p.fees)}</td>
+                  <td className="num mono" style={{color:"var(--ink)"}}>SAR {fmt(p.net_sar)}</td>
+                  <td className="mono dim" style={{fontSize:11}}>…{p.iban_tail}</td>
+                  <td>
+                    <div style={{display:"flex", gap:6, alignItems:"center"}}>
+                      <Chip kind={p.status==="approved"?"ok":p.status==="review"?"warn":"err"} dot>{p.status}</Chip>
+                      {p.flag && <span className={"po-flag " + (p.status==="dispute"?"err":"")}>{p.flag}</span>}
+                    </div>
+                  </td>
+                  <td>
+                    {p.status !== "approved"
+                      ? <button className="ops-btn sm primary">Resolve →</button>
+                      : <button className="ops-btn sm">Inspect</button>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </OpsShell>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

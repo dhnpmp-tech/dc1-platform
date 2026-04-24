@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>DCP Ops — Customers</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../assets/dcp-kit.css" />
+<link rel="stylesheet" href="../assets/ops-shell.css" />
+<style>
+.cx-row { display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--hair); cursor: pointer; }
+.cx-row:hover { background: var(--bg-2); }
+.cx-row.sel { background: color-mix(in oklab, var(--accent) 10%, transparent); }
+.cx-avatar { width: 28px; height: 28px; background: var(--bg-2); color: var(--accent); font-family: var(--mono); font-size: 10px; display:flex; align-items:center; justify-content:center; border: 1px solid var(--hair-2); letter-spacing: .04em; }
+.cx-detail { background: var(--paper); border: 1px solid var(--hair); padding: 18px; }
+.cx-stat { padding: 10px 0; border-bottom: 1px dashed var(--hair); }
+.cx-stat:last-child { border-bottom: 0; }
+.cx-stat .l { font-family: var(--mono); font-size: 10px; color: var(--mut); text-transform: uppercase; letter-spacing: .08em; }
+.cx-stat .v { font-family: var(--serif); font-size: 22px; color: var(--ink); line-height: 1.15; margin-top: 2px; }
+.cx-stat .v em { font-style: italic; color: var(--accent); }
+</style>
+</head>
+<body class="ops">
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../assets/data-ops-admin.js"></script>
+<script type="text/babel" src="../assets/ops-shell.jsx"></script>
+<script type="text/babel">
+const { useState } = React;
+const A = window.DCP_OPS_ADMIN;
+const { OpsShell, Chip, Bar, Kpi } = window;
+const fmt = n => n.toLocaleString('en-US');
+
+function App() {
+  const [sel, setSel] = useState(A.customers[0].id);
+  const [plan, setPlan] = useState("all");
+  const rows = plan === "all" ? A.customers : A.customers.filter(c => c.plan === plan);
+  const active = A.customers.find(c => c.id === sel);
+  const planCount = p => A.customers.filter(c => c.plan === p).length;
+
+  return (
+    <OpsShell current="customers" crumb="Customers" alarms={1} env="PROD" build={A.build}>
+      <div className="ops-page">
+        <div className="ops-page-hd">
+          <div>
+            <div className="ops-page-eb">Ops · Accounts</div>
+            <h1 className="ops-page-h1">Customers &amp; <em>usage</em></h1>
+            <div className="ops-page-lede">
+              Organizations billing through DCP — plan, consumption, MRR, arrears, and account health. Click a customer to inspect their full billing and support history.
+            </div>
+          </div>
+          <div className="ops-page-actions">
+            <button className="ops-btn">Export</button>
+            <button className="ops-btn primary">Impersonate</button>
+          </div>
+        </div>
+
+        <div className="ops-grid c4" style={{marginBottom:14}}>
+          <Kpi label="Active customers" value={A.customers.length} delta={"+3 this week"} em />
+          <Kpi label="MRR · total"      value={"SAR " + fmt(A.customers.reduce((s,c)=>s+c.mrr,0))} delta="+14.2% MoM" />
+          <Kpi label="In arrears"       value={A.customers.filter(c=>c.arrears).length} delta="SAR 32,410 overdue" deltaKind="down" />
+          <Kpi label="Avg tokens / day" value="14.7B" delta="Enterprise = 68% share" deltaKind="neutral" />
+        </div>
+
+        <div className="ops-toolbar">
+          <div className="ops-filters">
+            <button className={"ops-filter " + (plan==="all"?"on":"")} onClick={()=>setPlan("all")}>All <span className="ct">{A.customers.length}</span></button>
+            {["enterprise","pro","starter"].map(p => (
+              <button key={p} className={"ops-filter " + (plan===p?"on":"")} onClick={()=>setPlan(p)}>{p[0].toUpperCase()+p.slice(1)} <span className="ct">{planCount(p)}</span></button>
+            ))}
+          </div>
+          <input className="ops-search" placeholder="name / domain / id…" />
+        </div>
+
+        <div style={{display:"grid", gridTemplateColumns:"1fr 400px", gap:12}}>
+          <div className="ops-card" style={{padding:0}}>
+            {rows.map(c => (
+              <div key={c.id} className={"cx-row " + (sel===c.id ? "sel" : "")} onClick={()=>setSel(c.id)}>
+                <div className="cx-avatar">{c.name.split(" ").map(w=>w[0]).slice(0,2).join("")}</div>
+                <div>
+                  <div style={{display:"flex", gap:8, alignItems:"center"}}>
+                    <span style={{color:"var(--ink)", fontWeight:500}}>{c.name}</span>
+                    <Chip kind={c.plan==="enterprise"?"info":c.plan==="pro"?"ok":"mut"}>{c.plan}</Chip>
+                    {c.arrears && <Chip kind="err" dot>arrears</Chip>}
+                  </div>
+                  <div className="mono dim" style={{fontSize:10, marginTop:2}}>{c.id} · {c.domain} · {c.seats} seats · since {c.since}</div>
+                </div>
+                <div style={{textAlign:"end"}}>
+                  <div className="mono" style={{fontSize:11, color:"var(--ink)"}}>SAR {fmt(c.mrr)}/mo</div>
+                  <div className="mono dim" style={{fontSize:10}}>{fmt(c.tok_30d)} tok · 30d</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {active && (
+            <div className="cx-detail">
+              <div style={{display:"flex", gap:6, marginBottom:10}}>
+                <Chip kind={active.plan==="enterprise"?"info":active.plan==="pro"?"ok":"mut"}>{active.plan}</Chip>
+                <Chip kind="ok" dot>active</Chip>
+                {active.arrears && <Chip kind="err" dot>arrears</Chip>}
+              </div>
+              <div style={{fontFamily:"var(--serif)", fontSize:26, lineHeight:1.1}}><em style={{color:"var(--accent)", fontStyle:"italic"}}>{active.name}</em></div>
+              <div className="mono dim" style={{fontSize:10, marginTop:4, letterSpacing:".05em"}}>{active.id} · {active.domain} · customer since {active.since}</div>
+
+              <div style={{marginTop:14, paddingTop:10, borderTop:"1px solid var(--hair)"}}>
+                <div className="cx-stat">
+                  <div className="l">Monthly recurring</div>
+                  <div className="v">SAR <em>{fmt(active.mrr)}</em></div>
+                </div>
+                <div className="cx-stat">
+                  <div className="l">Tokens · last 30 days</div>
+                  <div className="v">{fmt(active.tok_30d)}</div>
+                </div>
+                <div className="cx-stat">
+                  <div className="l">Seats</div>
+                  <div className="v">{active.seats}</div>
+                </div>
+              </div>
+
+              <div style={{marginTop:14, paddingTop:10, borderTop:"1px solid var(--hair)"}}>
+                <div style={{fontFamily:"var(--mono)", fontSize:10, color:"var(--mut)", letterSpacing:".12em", textTransform:"uppercase", marginBottom:8}}>Plan limits</div>
+                <div style={{fontFamily:"var(--mono)", fontSize:11, marginBottom:6}}>
+                  <div style={{display:"flex", justifyContent:"space-between"}}><span style={{color:"var(--mut)"}}>TPM quota</span><span>{fmt(active.tok_30d)} / 30B</span></div>
+                  <Bar value={active.tok_30d} max={30_000_000_000} />
+                </div>
+              </div>
+
+              <div style={{marginTop:14, paddingTop:10, borderTop:"1px solid var(--hair)"}}>
+                <div style={{fontFamily:"var(--mono)", fontSize:10, color:"var(--mut)", letterSpacing:".12em", textTransform:"uppercase", marginBottom:6}}>Contact</div>
+                <div className="mono" style={{fontSize:11, color:"var(--ink-2)", lineHeight:1.7}}>
+                  <div>CSM · {active.csm}</div>
+                  <div>Billing · {active.billing_email}</div>
+                </div>
+              </div>
+
+              <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginTop:16, paddingTop:14, borderTop:"1px solid var(--hair)"}}>
+                <button className="ops-btn sm">Impersonate</button>
+                <button className="ops-btn sm">Adjust limits</button>
+                <button className="ops-btn sm">Issue credit</button>
+                <button className="ops-btn sm danger">Suspend</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </OpsShell>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

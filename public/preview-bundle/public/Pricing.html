@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-lang="en" data-palette="midnight">
+<head>
+<meta charset="utf-8">
+<title>Pricing — DCP</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Naskh+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/dcp-kit.css">
+<style>
+  /* page-local tokens + helpers */
+  .pg-hero { padding: 120px 0 80px; border-bottom:1px solid var(--hair); }
+  .pg-hero h1 { font-family:var(--serif); font-weight:400; font-size:clamp(54px,8vw,112px); line-height:.95; letter-spacing:-.02em; margin:0; }
+  .pg-hero h1 em { font-style:italic; background:var(--grad); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .pg-hero .lead { max-width:58ch; color:var(--ink-2); font-size:18px; line-height:1.55; margin:28px 0 0; }
+
+  /* mode switcher */
+  .mode-tabs { display:flex; gap:0; border:1px solid var(--hair); background:var(--paper); margin:64px 0 32px; }
+  .mode-tabs button {
+    flex:1; padding:28px 24px; border:none; background:transparent; cursor:pointer;
+    text-align:start; border-inline-end:1px solid var(--hair); color:var(--ink-2);
+    transition: background .2s, color .2s;
+  }
+  .mode-tabs button:last-child { border-inline-end:none; }
+  .mode-tabs button.on { background:var(--bg-2); color:var(--ink); }
+  .mode-tabs button .m-label { font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--mut); }
+  .mode-tabs button.on .m-label { color:var(--teal); }
+  .mode-tabs button .m-title { display:block; font-family:var(--serif); font-size:26px; margin:10px 0 8px; color:var(--ink); line-height:1.1; }
+  .mode-tabs button .m-sub { display:block; font-size:13.5px; color:var(--ink-2); line-height:1.45; margin-bottom:12px; }
+  .mode-tabs button .m-good { font-family:var(--mono); font-size:10.5px; letter-spacing:.06em; color:var(--mut); }
+
+  /* price grid */
+  .price-grid {
+    display:grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr; gap:0;
+    border:1px solid var(--hair); background:var(--paper);
+  }
+  .price-grid .hd {
+    font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--mut); padding:14px 20px; background:var(--bg-2); border-bottom:1px solid var(--hair);
+  }
+  .price-grid .cell {
+    padding:22px 20px; border-top:1px solid var(--hair); border-inline-end:1px solid var(--hair);
+    display:flex; flex-direction:column; justify-content:center; gap:4px; min-height:88px;
+  }
+  .price-grid .cell:nth-child(5n) { border-inline-end:none; }
+  .price-grid .cell.gpu b { font-family:var(--serif); font-size:22px; font-weight:400; color:var(--ink); }
+  .price-grid .cell.gpu span { font-family:var(--mono); font-size:11px; color:var(--mut); letter-spacing:.04em; }
+  .price-grid .cell.num { text-align:end; }
+  .price-grid .cell.num b { font-family:var(--serif); font-size:26px; font-weight:400; color:var(--ink); }
+  .price-grid .cell.num b.dim { color:var(--mut); }
+  .price-grid .cell.num .u { font-family:var(--mono); font-size:10.5px; color:var(--mut); letter-spacing:.06em; margin-inline-start:4px; }
+  .price-grid .cell.num .usd { font-family:var(--mono); font-size:11px; color:var(--mut); }
+  .price-grid .active-col { background: color-mix(in oklab, var(--teal) 8%, transparent); }
+
+  @media (max-width: 960px) {
+    .price-grid { grid-template-columns: 1fr 1fr; }
+    .price-grid .hd.hd-spot, .price-grid .hd.hd-reserved, .price-grid .cell.c-spot, .price-grid .cell.c-reserved { display:none; }
+    .mode-tabs { flex-direction:column; }
+    .mode-tabs button { border-inline-end:none; border-bottom:1px solid var(--hair); }
+  }
+
+  /* inference table */
+  .inf-wrap { margin-top:24px; }
+  .inf-table { width:100%; border-collapse:collapse; border:1px solid var(--hair); background:var(--paper); }
+  .inf-table th { text-align:start; font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--mut); padding:14px 20px; background:var(--bg-2); border-bottom:1px solid var(--hair); font-weight:500; }
+  .inf-table th:last-child, .inf-table td:last-child { text-align:end; }
+  .inf-table td { padding:20px; border-top:1px solid var(--hair); color:var(--ink); }
+  .inf-table td.mname { display:flex; align-items:center; gap:12px; }
+  .inf-table td.mname b { font-family:var(--serif); font-weight:400; font-size:19px; }
+  .inf-table .ar-chip { font-family:var(--mono); font-size:10px; letter-spacing:.08em; color:var(--teal); border:1px solid color-mix(in oklab, var(--teal) 30%, transparent); padding:2px 8px; border-radius:999px; }
+  .inf-table .per { font-family:var(--mono); font-size:12px; color:var(--ink); }
+  .inf-table .per .u { color:var(--mut); margin-inline-start:4px; }
+
+  /* calculator */
+  .calc { display:grid; grid-template-columns: 1.1fr 1fr; gap:32px; margin-top:48px; }
+  .calc-inputs { border:1px solid var(--hair); background:var(--paper); padding:32px; }
+  .calc-inputs label.lbl { display:block; font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--mut); margin:0 0 10px; }
+  .calc-inputs .calc-field + .calc-field { margin-top:24px; }
+  .calc-inputs .calc-field .val { font-family:var(--serif); font-size:24px; color:var(--ink); margin-top:8px; }
+  .calc-out-big {
+    border:1px solid var(--line); background:var(--bg-2); padding:48px 40px;
+    display:flex; flex-direction:column; justify-content:center;
+  }
+  .calc-out-big .k { font-family:var(--mono); font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--mut); }
+  .calc-out-big .big { font-family:var(--serif); font-size:clamp(54px, 8vw, 96px); font-weight:400; line-height:1; margin:16px 0 8px; letter-spacing:-.02em; }
+  .calc-out-big .big .u { font-family:var(--mono); font-size:.28em; letter-spacing:.16em; color:var(--mut); margin-inline-start:10px; vertical-align:.5em; }
+  .calc-out-big .breakdown { display:grid; grid-template-columns: 1fr auto; gap:10px 24px; margin-top:28px; padding-top:24px; border-top:1px dashed var(--hair); }
+  .calc-out-big .breakdown .bk-k { color:var(--mut); font-family:var(--mono); font-size:11.5px; }
+  .calc-out-big .breakdown .bk-v { color:var(--ink); font-family:var(--mono); font-size:12.5px; }
+  @media (max-width: 960px) { .calc { grid-template-columns: 1fr; } }
+
+  /* addons */
+  .addon-grid { display:grid; grid-template-columns: repeat(3, 1fr); gap:0; border:1px solid var(--hair); background:var(--paper); margin-top:24px; }
+  .addon-grid .ad { padding:24px; border-inline-end:1px solid var(--hair); border-top:1px solid var(--hair); }
+  .addon-grid .ad:nth-child(-n+3) { border-top:none; }
+  .addon-grid .ad:nth-child(3n) { border-inline-end:none; }
+  .addon-grid .ad .k { font-family:var(--mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--mut); }
+  .addon-grid .ad .v { font-family:var(--serif); font-size:24px; color:var(--ink); margin-top:10px; }
+  @media (max-width: 760px) { .addon-grid { grid-template-columns: 1fr; } .addon-grid .ad { border-inline-end:none; border-top:1px solid var(--hair)!important; } .addon-grid .ad:first-child { border-top:none; } }
+
+  /* FAQ */
+  .faq { margin-top:24px; border-top:1px solid var(--hair); }
+  .faq details { border-bottom:1px solid var(--hair); padding:24px 0; }
+  .faq summary {
+    cursor:pointer; list-style:none; display:flex; justify-content:space-between; align-items:baseline; gap:24px;
+    font-family:var(--serif); font-size:24px; font-weight:400; color:var(--ink);
+  }
+  .faq summary::-webkit-details-marker { display:none; }
+  .faq summary::after { content:"+"; font-family:var(--mono); font-size:24px; color:var(--mut); transition: transform .2s; }
+  .faq details[open] summary::after { content:"−"; }
+  .faq details p { margin:14px 0 0; color:var(--ink-2); font-size:16.5px; line-height:1.65; max-width:70ch; }
+
+  /* utility bar */
+  .util-bar-top { position:fixed; top:16px; inset-inline-end:16px; display:flex; gap:8px; z-index:20; }
+</style>
+</head>
+<body>
+
+<div class="util-bar-top">
+  <span class="lang-pill" id="lang-pill">
+    <button data-l="en" class="on">EN</button>
+    <button data-l="ar">ع</button>
+  </span>
+</div>
+
+<div id="app"></div>
+
+<script src="../assets/i18n.js"></script>
+<script src="../assets/data.js"></script>
+<script src="../assets/data-public.js"></script>
+<script>window.DCP_LOGO_SRC = "../assets/dcp-logo-square.jpeg";</script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="../assets/dcp-kit.jsx"></script>
+<script type="text/babel" src="_shell.jsx"></script>
+<script type="text/babel" src="Pricing.jsx"></script>
+
+</body>
+</html>

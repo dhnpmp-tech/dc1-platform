@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>DCP Ops — Overview</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+
+<link rel="stylesheet" href="../assets/dcp-kit.css" />
+<link rel="stylesheet" href="../assets/ops-shell.css" />
+</head>
+<body class="ops">
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script src="../assets/data-ops-admin.js"></script>
+<script type="text/babel" src="../assets/ops-shell.jsx"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useMemo } = React;
+const A = window.DCP_OPS_ADMIN;
+const { OpsShell, Spark, Chip, Bar, Kpi } = window;
+
+function fmt(n, d=0) { return n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }); }
+function sar(n) { return "SAR " + fmt(Math.round(n)); }
+function pct(n, d=1) { const s = n>0?"+":""; return s + (n*100).toFixed(d) + "%"; }
+
+function KpiBand() {
+  const t = A.topline;
+  return (
+    <div className="ops-grid c6" style={{marginBottom: 12}}>
+      <Kpi label="GMV · today"        value={sar(t.gmv_today_sar)}     delta={`${pct(t.gmv_today_delta)} vs avg`} em />
+      <Kpi label="Net · today"        value={sar(t.net_today_sar)}     delta={`${pct(t.net_today_delta)} vs avg`} />
+      <Kpi label="Jobs · 24h"         value={fmt(t.jobs_24h)}          delta={`${pct(t.jobs_24h_delta)} vs 7d avg`} />
+      <Kpi label="p50 / p95 · global" value={`${t.p50_global_ms} / ${t.p95_global_ms}`} unit="ms" delta="steady" deltaKind="neutral" />
+      <Kpi label="Error rate"         value={(t.err_rate*100).toFixed(2)} unit="%" delta={`budget ${Math.round(t.error_budget_used*100)}% burned`} deltaKind="neutral" />
+      <Kpi label="Tokens / sec"       value={fmt(Math.round(t.tokens_per_sec/1000))+"k"} delta="aggregate across fleet" deltaKind="neutral" />
+    </div>
+  );
+}
+
+function RevenueCard() {
+  const t = A.topline;
+  return (
+    <div className="ops-card" style={{gridColumn:"span 2"}}>
+      <div className="ops-card-hd">
+        <div className="ops-card-t">Revenue · last 24h <em style={{color:"var(--accent)"}}>SAR</em></div>
+        <div style={{display:"flex", gap:12, alignItems:"baseline"}}>
+          <span className="ops-card-eb">TOTAL {sar(A.revenue_24h.reduce((a,b)=>a+b,0))}</span>
+          <span className="ops-card-eb accent">NET {sar(A.revenue_24h.reduce((a,b)=>a+b,0)*0.25)}</span>
+        </div>
+      </div>
+      <Spark data={A.revenue_24h} height={92} />
+      <div style={{display:"grid", gridTemplateColumns:"repeat(24, 1fr)", fontFamily:"var(--mono)", fontSize:9, color:"var(--dim)", marginTop:4, letterSpacing:".04em"}}>
+        {Array.from({length:24}).map((_,i)=>(
+          <span key={i} style={{textAlign:"center"}}>{i%4===0 ? String(i).padStart(2,"0") : "·"}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LatencyCard() {
+  const t = A.topline;
+  return (
+    <div className="ops-card">
+      <div className="ops-card-hd">
+        <div className="ops-card-t">Latency · p50</div>
+        <span className="ops-card-eb accent">{t.p50_global_ms} MS NOW</span>
+      </div>
+      <Spark data={A.latency_24h.map(x=>x-14)} color="amber" height={92} />
+      <div style={{fontFamily:"var(--mono)", fontSize:11, color:"var(--mut)", marginTop:8, letterSpacing:".04em"}}>
+        Range: 15.4–18.4 ms · SLO &lt; 20 ms · <span style={{color:"var(--green)"}}>within SLO</span>
+      </div>
+    </div>
+  );
+}
+
+function RegionMiniCard() {
+  return (
+    <div className="ops-card">
+      <div className="ops-card-hd">
+        <div className="ops-card-t">Regions</div>
+        <a href="./Fleet Map.html" className="ops-card-eb accent" style={{textDecoration:"none"}}>OPEN MAP →</a>
+      </div>
+      <table className="ops-tbl dense">
+        <thead><tr><th>Region</th><th className="num">GPUs</th><th className="num">Util</th><th className="num">p50</th><th className="num">SAR/h</th></tr></thead>
+        <tbody>
+          {A.regions.map(r => (
+            <tr key={r.id}>
+              <td><span className="mono" style={{color:"var(--ink)"}}>{r.code}</span> <span className="dim">· {r.name}</span>{r.flag && <> <Chip kind={r.flag==="new"?"info":"warn"}>{r.flag}</Chip></>}</td>
+              <td className="num">{r.online}/{r.gpus}</td>
+              <td className="num" style={{color: r.util > 0.75 ? "var(--amber)" : "var(--ink-2)"}}>{Math.round(r.util*100)}%</td>
+              <td className="num">{r.p50}ms</td>
+              <td className="num">{fmt(r.sar_per_hour)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AnomaliesCard() {
+  const a = A.anomalies_1h;
+  const rows = [
+    { k:"Slow (p95 breach)",     v:a.slow,        kind:"warn" },
+    { k:"Router retries",        v:a.retry,       kind:"warn" },
+    { k:"Hold overruns",         v:a.hold_overrun,kind:"err"  },
+    { k:"Policy-blocked",        v:a.blocked,     kind:"err"  },
+    { k:"PDPL-held",             v:a.pdpl_hold,   kind:"info" },
+    { k:"Settlement mismatches", v:a.settlement_mismatch, kind:"ok" },
+  ];
+  return (
+    <div className="ops-card">
+      <div className="ops-card-hd">
+        <div className="ops-card-t">Anomalies · last 1h</div>
+        <a href="./Jobs Monitor.html" className="ops-card-eb accent" style={{textDecoration:"none"}}>OPEN MONITOR →</a>
+      </div>
+      <div style={{display:"grid", gap:6}}>
+        {rows.map(r => (
+          <div key={r.k} style={{display:"grid", gridTemplateColumns:"1fr auto 70px", gap:10, alignItems:"center"}}>
+            <span style={{fontSize:12, color:"var(--ink-2)"}}>{r.k}</span>
+            <Chip kind={r.kind}>{r.v}</Chip>
+            <Bar v={Math.min(r.v/150, 1)} color={r.kind==="err"?"red":r.kind==="warn"?"amber":"accent"} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function IncidentCard() {
+  const i = A.incidents.filter(x=>x.status!=="resolved").slice(0,2);
+  return (
+    <div className="ops-card">
+      <div className="ops-card-hd">
+        <div className="ops-card-t">Active incidents</div>
+        <a href="./Incidents.html" className="ops-card-eb accent" style={{textDecoration:"none"}}>ALL →</a>
+      </div>
+      {i.map(inc => (
+        <div key={inc.id} style={{padding:"10px 0", borderBottom:"1px dashed var(--hair)"}}>
+          <div style={{display:"flex", gap:8, alignItems:"center", marginBottom:4}}>
+            <Chip kind={inc.severity==="major"?"err":"warn"} dot>{inc.severity}</Chip>
+            <span style={{fontFamily:"var(--mono)", fontSize:10, color:"var(--mut)"}}>{inc.id}</span>
+            <span style={{fontFamily:"var(--mono)", fontSize:10, color:"var(--mut)", marginInlineStart:"auto"}}>{inc.started}</span>
+          </div>
+          <div style={{fontSize:13, color:"var(--ink)", marginBottom:4}}>{inc.title}</div>
+          <div style={{fontSize:11, color:"var(--mut)"}}>Commander: {inc.commander} · Affects: {inc.affects.join(", ").toUpperCase()}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function OncallCard() {
+  const r = A.oncall.rotation[0];
+  return (
+    <div className="ops-card">
+      <div className="ops-card-hd">
+        <div className="ops-card-t">On-call</div>
+        <span className="ops-card-eb accent">PRIMARY</span>
+      </div>
+      <div style={{fontFamily:"var(--serif)", fontSize:22, marginBottom:6}}>{r.primary}</div>
+      <div style={{fontFamily:"var(--mono)", fontSize:11, color:"var(--mut)", letterSpacing:".04em"}}>
+        <div>Shift: {r.shift}</div>
+        <div>Pager: {r.pager}</div>
+        <div>Secondary: {r.secondary}</div>
+      </div>
+      <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8, marginTop:12, paddingTop:12, borderTop:"1px dashed var(--hair)"}}>
+        <div><div style={{fontFamily:"var(--serif)", fontSize:20, color:"var(--accent)"}}>{A.oncall.pages_24h}</div><div style={{fontFamily:"var(--mono)", fontSize:9.5, color:"var(--mut)", letterSpacing:".1em", textTransform:"uppercase"}}>pages 24h</div></div>
+        <div><div style={{fontFamily:"var(--serif)", fontSize:20}}>{A.oncall.mttr_30d_min}m</div><div style={{fontFamily:"var(--mono)", fontSize:9.5, color:"var(--mut)", letterSpacing:".1em", textTransform:"uppercase"}}>MTTR 30d</div></div>
+        <div><div style={{fontFamily:"var(--serif)", fontSize:20}}>{A.oncall.incidents_7d}</div><div style={{fontFamily:"var(--mono)", fontSize:9.5, color:"var(--mut)", letterSpacing:".1em", textTransform:"uppercase"}}>inc 7d</div></div>
+      </div>
+    </div>
+  );
+}
+
+function KybSnapshot() {
+  const c = A.kyb_counters;
+  return (
+    <div className="ops-card">
+      <div className="ops-card-hd">
+        <div className="ops-card-t">KYB queue</div>
+        <a href="./Providers.html" className="ops-card-eb accent" style={{textDecoration:"none"}}>REVIEW →</a>
+      </div>
+      <div style={{display:"grid", gridTemplateColumns:"repeat(5, 1fr)", gap:8}}>
+        {[
+          { k:"Review", v:c.review, kind:"warn" },
+          { k:"Hold", v:c.hold, kind:"err" },
+          { k:"Appr 24h", v:c.approved_24h, kind:"ok" },
+          { k:"Rej 24h", v:c.rejected_24h, kind:"mut" },
+          { k:"Avg h", v:c.avg_review_h, kind:"info" },
+        ].map(r => (
+          <div key={r.k} style={{background:"var(--bg-2)", padding:"8px 10px", borderLeft:`2px solid ${r.kind==="warn"?"var(--amber)":r.kind==="err"?"var(--red)":r.kind==="ok"?"var(--green)":r.kind==="info"?"var(--accent)":"var(--hair-2)"}`}}>
+            <div style={{fontFamily:"var(--serif)", fontSize:22}}>{r.v}</div>
+            <div style={{fontFamily:"var(--mono)", fontSize:9.5, color:"var(--mut)", letterSpacing:".1em", textTransform:"uppercase"}}>{r.k}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{marginTop:12, fontSize:11.5, color:"var(--mut)"}}>
+        Oldest in queue: <span style={{color:"var(--ink-2)", fontFamily:"var(--mono)"}}>PRV-1102 · Qassim Compute Cooperative</span> · 42h
+      </div>
+    </div>
+  );
+}
+
+function TopCustomers() {
+  const rows = [...A.customers].sort((a,b)=>b.mtd_sar - a.mtd_sar).slice(0,6);
+  return (
+    <div className="ops-card" style={{gridColumn:"span 2"}}>
+      <div className="ops-card-hd">
+        <div className="ops-card-t">Top customers · MTD</div>
+        <a href="./Customers.html" className="ops-card-eb accent" style={{textDecoration:"none"}}>ALL 214 →</a>
+      </div>
+      <table className="ops-tbl dense">
+        <thead><tr><th>Customer</th><th>Plan</th><th className="num">Jobs 30d</th><th className="num">MTD SAR</th><th className="num">p50</th><th>Status</th></tr></thead>
+        <tbody>
+          {rows.map(c => (
+            <tr key={c.id}>
+              <td><div style={{color:"var(--ink)", fontSize:12.5}}>{c.name}</div><div className="dim" style={{fontSize:10.5, fontFamily:"var(--mono)"}}>{c.domain}</div></td>
+              <td><Chip kind={c.plan==="Sovereign"?"info":c.plan.startsWith("Enterprise")?"accent":"mut"}>{c.plan}</Chip></td>
+              <td className="num">{fmt(c.jobs_30d)}</td>
+              <td className="num" style={{color:"var(--ink)"}}>{fmt(c.mtd_sar)}</td>
+              <td className="num">{c.p50}ms</td>
+              <td><Chip kind={c.status==="healthy"?"ok":c.status==="watch"?"warn":"err"} dot>{c.status}</Chip></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PayoutCard() {
+  const p = A.payout_cycle;
+  return (
+    <div className="ops-card">
+      <div className="ops-card-hd">
+        <div className="ops-card-t">Payout cycle</div>
+        <a href="./Billing.html" className="ops-card-eb accent" style={{textDecoration:"none"}}>RECONCILE →</a>
+      </div>
+      <div style={{fontFamily:"var(--serif)", fontSize:32, lineHeight:1}}>
+        <em style={{color:"var(--accent)", fontStyle:"italic"}}>{sar(p.total_pending_sar)}</em>
+      </div>
+      <div style={{fontFamily:"var(--mono)", fontSize:11, color:"var(--mut)", marginTop:6, letterSpacing:".04em"}}>
+        <div>Pending across {p.providers_included} providers</div>
+        <div>Window: {p.period}</div>
+        <div>Releases in {p.ends_in_h}h · {p.next_release}</div>
+        {p.disputes_open > 0 && <div style={{color:"var(--amber)", marginTop:6}}>⚠ {p.disputes_open} dispute{p.disputes_open>1?"s":""} open</div>}
+      </div>
+      <div style={{marginTop:12}}>
+        <div style={{display:"flex", justifyContent:"space-between", fontFamily:"var(--mono)", fontSize:9.5, color:"var(--mut)", letterSpacing:".1em", textTransform:"uppercase", marginBottom:4}}>
+          <span>Last 6 cycles</span><span>SAR</span>
+        </div>
+        <Spark data={A.payout_totals_90d.map(x=>x.total)} height={34} />
+      </div>
+    </div>
+  );
+}
+
+function PegCard() {
+  const p = A.pricing;
+  return (
+    <div className="ops-card">
+      <div className="ops-card-hd">
+        <div className="ops-card-t">SAR/USD peg</div>
+        <span className="ops-card-eb accent">±10 BPS TOL.</span>
+      </div>
+      <div style={{fontFamily:"var(--serif)", fontSize:44, lineHeight:1, letterSpacing:"-.01em"}}>
+        <em style={{color:"var(--accent)", fontStyle:"italic"}}>{p.peg_sar_usd}</em>
+      </div>
+      <div style={{fontFamily:"var(--mono)", fontSize:11, color:"var(--mut)", marginTop:6, letterSpacing:".04em"}}>
+        Drift: <span style={{color: p.peg_drift_bps < 10 ? "var(--green)" : "var(--amber)"}}>{p.peg_drift_bps} bps</span> · updated {p.peg_updated_at}
+      </div>
+      <div style={{marginTop:12, paddingTop:12, borderTop:"1px dashed var(--hair)", fontSize:11.5, color:"var(--ink-2)"}}>
+        Platform take: <span style={{fontFamily:"var(--mono)", color:"var(--ink)"}}>{Math.round(p.platform_take*100)}%</span>
+        · Provider share: <span style={{fontFamily:"var(--mono)", color:"var(--ink)"}}>{Math.round((1-p.platform_take)*100)}%</span>
+      </div>
+    </div>
+  );
+}
+
+function ActivityFeed() {
+  const rows = A.audit.slice(0, 8);
+  return (
+    <div className="ops-card">
+      <div className="ops-card-hd">
+        <div className="ops-card-t">Operator activity</div>
+        <a href="./Audit.html" className="ops-card-eb accent" style={{textDecoration:"none"}}>FULL LOG →</a>
+      </div>
+      <div style={{fontFamily:"var(--mono)", fontSize:11, lineHeight:1.7}}>
+        {rows.map((r,i) => (
+          <div key={i} style={{display:"grid", gridTemplateColumns:"56px 1fr", gap:10, padding:"3px 0", borderBottom:i<rows.length-1?"1px dashed var(--hair)":"none"}}>
+            <span style={{color:"var(--dim)"}}>{r.at.slice(0,5)}</span>
+            <span style={{color:"var(--ink-2)"}}>
+              <span style={{color: r.actor==="system" ? "var(--amber)" : "var(--accent)"}}>{r.actor.split("@")[0]}</span>
+              <span style={{color:"var(--mut)"}}> · </span>
+              <span style={{color:"var(--ink)"}}>{r.action}</span>
+              <span style={{color:"var(--mut)"}}> → </span>
+              <span>{r.target}</span>
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <OpsShell current="overview" crumb="Overview" alarms={1} env="PROD" build={A.build}
+      topbarRight={<button className="ops-tb-btn" title="Refresh">↻ Refresh</button>}>
+      <div className="ops-page">
+        <div className="ops-page-hd">
+          <div>
+            <div className="ops-page-eb">Ops · Live</div>
+            <h1 className="ops-page-h1"><em>Kingdom</em>-wide operating picture</h1>
+            <div className="ops-page-lede">
+              Single-pane state of the DCP platform. KPIs refresh every 30s; incidents &amp; anomalies live.
+              · Env <span style={{fontFamily:"var(--mono)", color:"var(--accent)"}}>{A.env}</span>
+              · Fleet <span style={{fontFamily:"var(--mono)", color:"var(--ink-2)"}}>{A.fleet_version}</span>
+              · Build <span style={{fontFamily:"var(--mono)", color:"var(--ink-2)"}}>{A.build}</span>
+            </div>
+          </div>
+          <div className="ops-page-actions">
+            <button className="ops-btn">Export CSV</button>
+            <button className="ops-btn primary">Open runbook</button>
+          </div>
+        </div>
+
+        <KpiBand />
+
+        <div className="ops-grid c3" style={{marginBottom: 12}}>
+          <RevenueCard />
+          <LatencyCard />
+        </div>
+
+        <div className="ops-grid c3" style={{marginBottom: 12}}>
+          <RegionMiniCard />
+          <AnomaliesCard />
+          <IncidentCard />
+        </div>
+
+        <div className="ops-grid c3" style={{marginBottom: 12}}>
+          <OncallCard />
+          <KybSnapshot />
+          <PayoutCard />
+        </div>
+
+        <div className="ops-grid c3">
+          <TopCustomers />
+          <ActivityFeed />
+        </div>
+
+        <div className="ops-section">
+          <div className="ops-section-hd">
+            <div className="ops-section-t">Posture</div>
+            <div className="ops-section-eb">SECONDARY CONTROLS</div>
+          </div>
+          <div className="ops-grid c4">
+            <PegCard />
+            <div className="ops-card">
+              <div className="ops-card-hd"><div className="ops-card-t">Error budget</div><span className="ops-card-eb">MO.</span></div>
+              <div style={{fontFamily:"var(--serif)", fontSize:32}}>{Math.round((1-A.topline.error_budget_used)*100)}%<span style={{fontFamily:"var(--mono)", fontSize:11, color:"var(--mut)", marginInlineStart:6}}>remaining</span></div>
+              <Bar v={A.topline.error_budget_used} color={A.topline.error_budget_used>0.75?"red":A.topline.error_budget_used>0.5?"amber":"accent"} />
+              <div style={{fontFamily:"var(--mono)", fontSize:11, color:"var(--mut)", marginTop:6}}>SLO: 99.95% · burn rate within plan</div>
+            </div>
+            <div className="ops-card">
+              <div className="ops-card-hd"><div className="ops-card-t">Tickets</div><a href="./Tickets.html" className="ops-card-eb accent" style={{textDecoration:"none"}}>QUEUE →</a></div>
+              <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:6}}>
+                <div><div style={{fontFamily:"var(--serif)", fontSize:26}}>{A.ticket_counters.open}</div><div style={{fontFamily:"var(--mono)", fontSize:9.5, color:"var(--mut)", letterSpacing:".1em", textTransform:"uppercase"}}>open</div></div>
+                <div><div style={{fontFamily:"var(--serif)", fontSize:26, color:"var(--amber)"}}>{A.ticket_counters.high}</div><div style={{fontFamily:"var(--mono)", fontSize:9.5, color:"var(--mut)", letterSpacing:".1em", textTransform:"uppercase"}}>high pri</div></div>
+                <div><div style={{fontFamily:"var(--serif)", fontSize:26}}>{A.ticket_counters.avg_first_response_h}h</div><div style={{fontFamily:"var(--mono)", fontSize:9.5, color:"var(--mut)", letterSpacing:".1em", textTransform:"uppercase"}}>avg 1st resp</div></div>
+                <div><div style={{fontFamily:"var(--serif)", fontSize:26}}>{A.ticket_counters.closed_7d}</div><div style={{fontFamily:"var(--mono)", fontSize:9.5, color:"var(--mut)", letterSpacing:".1em", textTransform:"uppercase"}}>closed 7d</div></div>
+              </div>
+            </div>
+            <div className="ops-card">
+              <div className="ops-card-hd"><div className="ops-card-t">Compliance</div><a href="./Compliance.html" className="ops-card-eb accent" style={{textDecoration:"none"}}>QUEUE →</a></div>
+              <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:6}}>
+                <div><div style={{fontFamily:"var(--serif)", fontSize:26}}>{A.compliance_counters.open}</div><div style={{fontFamily:"var(--mono)", fontSize:9.5, color:"var(--mut)", letterSpacing:".1em", textTransform:"uppercase"}}>open</div></div>
+                <div><div style={{fontFamily:"var(--serif)", fontSize:26, color:"var(--amber)"}}>{A.compliance_counters.sla_risk}</div><div style={{fontFamily:"var(--mono)", fontSize:9.5, color:"var(--mut)", letterSpacing:".1em", textTransform:"uppercase"}}>SLA risk</div></div>
+                <div style={{gridColumn:"span 2"}}><div style={{fontFamily:"var(--mono)", fontSize:11, color:"var(--mut)", marginTop:6}}>Closed 30d: {A.compliance_counters.closed_30d}</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </OpsShell>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

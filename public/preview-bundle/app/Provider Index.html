@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-palette="midnight">
+<head>
+<meta charset="utf-8">
+<title>Provider surface — DCP</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/dcp-kit.css">
+<style>
+  html[data-palette="midnight"] body { background: var(--bg); }
+  body { margin:0; font-family:var(--sans); color:var(--ink); }
+  a { color:inherit; text-decoration:none; }
+  .wrap { max-width:1400px; margin:0 auto; padding:64px 48px 80px; }
+  .eb { font-family:var(--mono); font-size:11px; letter-spacing:.16em; color:var(--orange); text-transform:uppercase; }
+  h1 { font-family:var(--serif); font-weight:400; font-size:88px; line-height:1.05; margin:20px 0 24px; letter-spacing:-.015em; }
+  h1 em { color:var(--orange); font-style:italic; }
+  .lede { color:var(--ink-2); font-size:18px; line-height:1.55; max-width:72ch; margin:0 0 28px; }
+  .meta { display:grid; grid-template-columns:repeat(4,1fr); gap:22px; padding:22px 0; border-top:1px dashed var(--hair); border-bottom:1px solid var(--hair); font-family:var(--mono); font-size:10.5px; letter-spacing:.12em; color:var(--mut); text-transform:uppercase; margin-bottom:40px; }
+  .meta b { color:var(--ink); font-weight:500; display:block; margin-top:6px; font-size:13.5px; letter-spacing:.02em; text-transform:none; font-family:var(--sans); }
+  .sec { margin-top:48px; padding-top:24px; border-top:1px solid var(--hair); }
+  .sec-hd { display:grid; grid-template-columns:80px 1fr auto; gap:24px; align-items:baseline; margin-bottom:28px; }
+  .sec-n { font-family:var(--serif); font-style:italic; font-size:48px; color:var(--orange); line-height:.9; }
+  .sec-h { font-family:var(--serif); font-weight:400; font-size:32px; margin:0; letter-spacing:-.005em; }
+  .sec-s { font-family:var(--mono); font-size:10.5px; color:var(--mut); letter-spacing:.12em; text-transform:uppercase; margin-top:4px; }
+  .sec-c { font-family:var(--mono); font-size:11px; color:var(--ink); padding:6px 10px; border:1px solid var(--hair); }
+  .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+  @media (max-width:1000px){ .grid { grid-template-columns:1fr 1fr; } .meta { grid-template-columns:1fr 1fr; } }
+  @media (max-width:640px){ .grid { grid-template-columns:1fr; } h1 { font-size:56px; } }
+  .card { background:var(--paper); border:1px solid var(--hair); padding:22px; display:flex; flex-direction:column; min-height:200px; transition: border-color .15s, transform .15s; }
+  .card:hover { border-color:var(--orange); transform:translateY(-2px); }
+  .card-t { font-family:var(--serif); font-size:24px; margin:8px 0 6px; line-height:1.15; }
+  .card-d { font-size:13px; color:var(--ink-2); line-height:1.5; flex:1; }
+  .card-f { margin-top:14px; display:flex; justify-content:space-between; align-items:center; padding-top:12px; border-top:1px dashed var(--hair); }
+  .card-r { font-family:var(--mono); font-size:12px; color:var(--orange); letter-spacing:-.01em; }
+  .card-a { font-family:var(--mono); font-size:10.5px; color:var(--ink-2); letter-spacing:.1em; text-transform:uppercase; }
+  .card-eb { font-family:var(--mono); font-size:10px; letter-spacing:.14em; color:var(--orange); text-transform:uppercase; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eb">Provider surface · 9 screens</div>
+  <h1>Turn your GPU into <em>SAR.</em></h1>
+  <p class="lede">The provider side of DCP: onboarding, fleet management, earnings, wallet, reputation, settings. Orange-accent shell distinguishes provider context from renter (teal) and admin (ink).</p>
+  <div class="meta">
+    <div>Surface <b>Provider · 9 screens</b></div>
+    <div>Accent <b>Orange — the maker tone</b></div>
+    <div>Route <b>/provider/*</b></div>
+    <div>Shared <b>dcp-kit + provider-shell</b></div>
+  </div>
+
+  <section class="sec">
+    <div class="sec-hd">
+      <div class="sec-n">01</div>
+      <div>
+        <h2 class="sec-h">Onboarding</h2>
+        <div class="sec-s">Acquire → install → earn</div>
+      </div>
+      <div class="sec-c">1 screen</div>
+    </div>
+    <div class="grid">
+      <a href="./Setup.html" class="card">
+        <div class="card-eb">/setup</div>
+        <div class="card-t">Provider onboarding</div>
+        <div class="card-d">Six-step flow: welcome, detect GPU, download daemon, pair rig, set rate, go live. Pre-auth capable. Works in ~6 minutes.</div>
+        <div class="card-f"><div class="card-r">./Setup.html</div><div class="card-a">Flagship →</div></div>
+      </a>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-hd">
+      <div class="sec-n">02</div>
+      <div>
+        <h2 class="sec-h">Operate</h2>
+        <div class="sec-s">Daily dashboard, fleet, jobs, served catalog</div>
+      </div>
+      <div class="sec-c">4 screens</div>
+    </div>
+    <div class="grid">
+      <a href="./Provider Dashboard.html" class="card">
+        <div class="card-eb">/provider</div>
+        <div class="card-t">Dashboard</div>
+        <div class="card-d">Live rig status, today's earnings, incoming job feed. KPIs for today / week / month / lifetime.</div>
+        <div class="card-f"><div class="card-r">./Provider Dashboard</div><div class="card-a">Home →</div></div>
+      </a>
+      <a href="./Provider Rigs.html" class="card">
+        <div class="card-eb">/provider/rigs</div>
+        <div class="card-t">Rigs</div>
+        <div class="card-d">Fleet table with util, temp, uptime, status. Selectable detail drawer with pause/resume, model rotation, diagnostics.</div>
+        <div class="card-f"><div class="card-r">./Provider Rigs</div><div class="card-a">Fleet →</div></div>
+      </a>
+      <a href="./Provider Jobs.html" class="card">
+        <div class="card-eb">/provider/jobs</div>
+        <div class="card-t">Jobs</div>
+        <div class="card-d">Work log filterable by rig, model, status. Runtime-based settlement; tokens, seconds, SAR, failure handling.</div>
+        <div class="card-f"><div class="card-r">./Provider Jobs</div><div class="card-a">History →</div></div>
+      </a>
+      <a href="./Provider Models.html" class="card">
+        <div class="card-eb">/provider/models</div>
+        <div class="card-t">Models</div>
+        <div class="card-d">Catalog of models your rigs serve. Toggle on/off; see throughput, 30-day jobs, earnings per model.</div>
+        <div class="card-f"><div class="card-r">./Provider Models</div><div class="card-a">Catalog →</div></div>
+      </a>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-hd">
+      <div class="sec-n">03</div>
+      <div>
+        <h2 class="sec-h">Earn</h2>
+        <div class="sec-s">Money in, reputation up</div>
+      </div>
+      <div class="sec-c">3 screens</div>
+    </div>
+    <div class="grid">
+      <a href="./Provider Earnings.html" class="card">
+        <div class="card-eb">/provider/earnings</div>
+        <div class="card-t">Earnings</div>
+        <div class="card-d">30-day chart, breakdown by model and rig, recent payouts. Tax invoicing anchored from wallet.</div>
+        <div class="card-f"><div class="card-r">./Provider Earnings</div><div class="card-a">Chart →</div></div>
+      </a>
+      <a href="./Provider Wallet.html" class="card">
+        <div class="card-eb">/provider/wallet</div>
+        <div class="card-t">Wallet</div>
+        <div class="card-d">Current balance, SAR IBAN payout, USDC on Base alternative. Settlement flow explained. ZATCA invoicing.</div>
+        <div class="card-f"><div class="card-r">./Provider Wallet</div><div class="card-a">Payouts →</div></div>
+      </a>
+      <a href="./Provider Reputation.html" class="card">
+        <div class="card-eb">/provider/reputation</div>
+        <div class="card-t">Reputation</div>
+        <div class="card-d">Trust score, tier ladder (Bronze → Platinum), renter reviews. Perks scale with completed jobs.</div>
+        <div class="card-f"><div class="card-r">./Provider Reputation</div><div class="card-a">Tier →</div></div>
+      </a>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-hd">
+      <div class="sec-n">04</div>
+      <div>
+        <h2 class="sec-h">Account</h2>
+        <div class="sec-s">Fleet-wide defaults and preferences</div>
+      </div>
+      <div class="sec-c">1 screen</div>
+    </div>
+    <div class="grid">
+      <a href="./Provider Settings.html" class="card">
+        <div class="card-eb">/provider/settings</div>
+        <div class="card-t">Settings</div>
+        <div class="card-d">Fleet-wide rate and availability. Profile, notifications, kill switch, danger zone. Per-rig overrides live in Rigs.</div>
+        <div class="card-f"><div class="card-r">./Provider Settings</div><div class="card-a">Prefs →</div></div>
+      </a>
+    </div>
+  </section>
+
+  <section class="sec" style="text-align:center; padding:48px 0 0">
+    <div class="eb" style="color:var(--mut)">Next on the roadmap</div>
+    <div style="font-family:var(--serif); font-size:28px; margin-top:8px; color:var(--ink-2)">Admin surface · 12 screens + fleet map</div>
+    <div style="font-family:var(--mono); font-size:12px; color:var(--mut); letter-spacing:.06em; margin-top:10px">then: renter gaps · RTL pass · pitch deck</div>
+  </section>
+</div>
+</body>
+</html>

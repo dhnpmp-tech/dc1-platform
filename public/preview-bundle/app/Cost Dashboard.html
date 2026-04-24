@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-palette="midnight">
+<head>
+<meta charset="utf-8">
+<title>Cost Dashboard — DCP</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/dcp-kit.css">
+<link rel="stylesheet" href="../assets/app-shell.css">
+<link rel="stylesheet" href="../assets/app-i18n-rtl.css">
+<style>
+  .main-scroll { grid-area: main; overflow-y: auto; padding: 32px 40px 60px; }
+  .cd-head { display:grid; grid-template-columns:1fr auto; gap:24px; align-items:baseline; padding-bottom:20px; border-bottom:1px solid var(--hair); margin-bottom:28px; }
+  .cd-eb { font-family:var(--mono); font-size:11px; letter-spacing:.16em; color:var(--teal); text-transform:uppercase; }
+  .cd-h1 { font-family:var(--serif); font-weight:400; font-size:56px; line-height:1.12; margin:10px 0 14px; letter-spacing:-.005em; padding-bottom:4px; }
+  .cd-h1 em { color:var(--orange); font-style:italic; }
+  .cd-lede { color:var(--ink-2); font-size:15px; max-width:64ch; line-height:1.55; }
+
+  .kpi4 { display:grid; grid-template-columns:repeat(4,1fr); gap:0; border:1px solid var(--hair); background:var(--paper); margin-bottom:24px; }
+  .kpi4 .s { padding:22px; border-inline-end: 1px solid var(--hair); }
+  .kpi4 .s:last-child { border-inline-end: 0; }
+  .kpi-k { font-family:var(--mono); font-size:10.5px; letter-spacing:.12em; color:var(--mut); text-transform:uppercase; }
+  .kpi-v { font-family:var(--serif); font-size:40px; font-weight:400; line-height:1.1; margin-top:6px; padding-bottom:4px; }
+  .kpi-v em { color:var(--orange); font-style:italic; }
+  .kpi-trend { font-family:var(--mono); font-size:11px; letter-spacing:.04em; margin-top:4px; }
+  .kpi-trend.up { color:var(--red, #d06060); }
+  .kpi-trend.down { color:var(--teal); }
+
+  .card { background:var(--paper); border:1px solid var(--hair); padding:22px; margin-bottom:20px; }
+  .card-hd { display:flex; justify-content:space-between; align-items:baseline; padding-bottom:12px; border-bottom:1px dashed var(--hair); margin-bottom:18px; }
+  .card-t { font-family:var(--serif); font-size:24px; }
+
+  /* Daily spend chart */
+  .chart { display:grid; grid-template-columns:repeat(30,1fr); gap:3px; align-items:end; height:220px; padding:20px 0 10px; border-bottom:1px solid var(--hair); }
+  .bar { background:var(--teal); position:relative; cursor:pointer; transition:background .15s; min-height:2px; }
+  .bar:hover { background:var(--orange); }
+  .bar.hi { background:var(--orange); }
+  .chart-x { display:grid; grid-template-columns:repeat(6,1fr); font-family:var(--mono); font-size:10px; color:var(--mut); letter-spacing:.08em; padding-top:8px; }
+  .chart-x span { text-align:center; }
+
+  /* Model breakdown */
+  .mb-row { display:grid; grid-template-columns:150px 1fr 90px 90px; gap:14px; align-items:center; padding:14px 0; border-bottom:1px dashed var(--hair); }
+  .mb-row:last-child { border-bottom:0; }
+  .mb-name { font-family:var(--serif); font-size:20px; }
+  .mb-bar { height:12px; background:var(--hair); position:relative; }
+  .mb-bar-f { position:absolute; inset:0 auto 0 0; background:var(--teal); }
+  .mb-sar { font-family:var(--serif); font-style:italic; font-size:22px; color:var(--orange); text-align:end; }
+  .mb-pct { font-family:var(--mono); font-size:12px; color:var(--mut); text-align:end; letter-spacing:.05em; }
+  .mb-jobs { font-family:var(--mono); font-size:10.5px; color:var(--mut); letter-spacing:.05em; margin-top:2px; }
+
+  .duo { display:grid; grid-template-columns:1.3fr 1fr; gap:20px; }
+
+  .alert { display:grid; grid-template-columns:auto 1fr auto; gap:14px; align-items:center; padding:14px 18px; border-inline-start:3px solid var(--orange); background:color-mix(in oklab, var(--orange) 6%, transparent); margin-bottom:10px; }
+  .alert-ic { font-family:var(--mono); font-size:11px; letter-spacing:.1em; color:var(--orange); text-transform:uppercase; }
+  .alert-m { font-size:13px; color:var(--ink-2); line-height:1.5; }
+
+  .budget-bar { height:30px; background:var(--hair); position:relative; margin:14px 0 10px; }
+  .budget-bar-f { position:absolute; inset:0 auto 0 0; background:var(--teal); }
+  .budget-bar .mk { position:absolute; top:-4px; bottom:-4px; width:2px; background:var(--ink); }
+  .budget-bar .pct { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:11px; letter-spacing:.08em; color:var(--paper); mix-blend-mode:difference; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../assets/data-app.js"></script>
+<script src="../assets/i18n.js?v=2"></script>
+<script src="../assets/data-renter.js"></script>
+<script type="text/babel" src="../assets/dcp-kit.jsx"></script>
+<script type="text/babel" src="../assets/app-shell.jsx"></script>
+<script type="text/babel">
+const { useState } = React;
+const D = window.DCP_RENTER;
+
+function Cost() {
+  const [hover, setHover] = useState(null);
+  const total = D.dailySpend.reduce((a,d)=>a+d.sar, 0);
+  const totalJobs = D.dailySpend.reduce((a,d)=>a+d.jobs, 0);
+  const max = Math.max(...D.dailySpend.map(d=>d.sar));
+  const avg = total / 30;
+  const recentAvg = D.dailySpend.slice(-7).reduce((a,d)=>a+d.sar,0) / 7;
+  const trend = ((recentAvg / avg) - 1) * 100;
+
+  const maxModelSar = Math.max(...D.costByModel.map(m=>m.sar));
+  const budget = 3000;
+  const budgetPct = Math.min(100, (total/budget)*100);
+
+  return (
+    <window.AppFrame current="wallet" crumb="Cost dashboard" topbarRight={<a href="./Wallet.html" className="btn ghost sm">← Wallet</a>}>
+      <div className="main-scroll">
+        <div className="cd-head">
+          <div>
+            <div className="cd-eb">cost · last 30 days · nov 2025</div>
+            <h1 className="cd-h1">You spent <em>SAR {total.toFixed(2)}</em> across {totalJobs.toLocaleString()} jobs.</h1>
+            <div className="cd-lede">Breakdown by day and by model. The orange trendline flags any day more than 1.5× your 30-day average — usually a batch job that overshot.</div>
+          </div>
+          <div style={{display:"flex", gap:8}}>
+            <select className="btn ghost sm" style={{padding:"8px 12px"}}>
+              <option>Last 30 days</option><option>Last 90 days</option><option>This month</option>
+            </select>
+            <button className="btn sm">Export CSV</button>
+          </div>
+        </div>
+
+        <div className="kpi4">
+          <div className="s">
+            <div className="kpi-k">Total spend</div>
+            <div className="kpi-v"><em>SAR {total.toFixed(2)}</em></div>
+            <div className={"kpi-trend " + (trend>0?"up":"down")}>{trend>0?"↑":"↓"} {Math.abs(trend).toFixed(1)}% vs. 30-day avg</div>
+          </div>
+          <div className="s">
+            <div className="kpi-k">Daily avg</div>
+            <div className="kpi-v">SAR {avg.toFixed(2)}</div>
+            <div className="kpi-trend" style={{color:"var(--mut)"}}>over {30} days</div>
+          </div>
+          <div className="s">
+            <div className="kpi-k">Jobs run</div>
+            <div className="kpi-v">{totalJobs.toLocaleString()}</div>
+            <div className="kpi-trend" style={{color:"var(--mut)"}}>{(totalJobs/30).toFixed(0)}/day avg</div>
+          </div>
+          <div className="s">
+            <div className="kpi-k">SAR per 1M tok</div>
+            <div className="kpi-v">SAR 0.084</div>
+            <div className="kpi-trend down">↓ 12% vs. hyperscaler equiv</div>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="card-hd">
+            <div className="card-t">Daily spend</div>
+            <div style={{display:"flex", gap:16, alignItems:"center"}}>
+              {hover !== null && (
+                <div style={{fontFamily:"var(--mono)", fontSize:11, color:"var(--ink-2)", letterSpacing:".04em"}}>
+                  <strong style={{color:"var(--orange)", fontFamily:"var(--serif)", fontStyle:"italic", fontSize:18}}>{D.dailySpend[hover].date}</strong> · SAR {D.dailySpend[hover].sar} · {D.dailySpend[hover].jobs} jobs
+                </div>
+              )}
+              <div className="cd-eb" style={{color:"var(--mut)"}}>30-day avg: SAR {avg.toFixed(2)}</div>
+            </div>
+          </div>
+          <div className="chart">
+            {D.dailySpend.map((d,i) => (
+              <div key={i} className={"bar " + (d.sar > avg*1.5 ? "hi" : "")} 
+                   style={{height: (d.sar/max*100) + "%"}}
+                   onMouseEnter={()=>setHover(i)} onMouseLeave={()=>setHover(null)}
+                   title={`${d.date}: SAR ${d.sar}`}/>
+            ))}
+          </div>
+          <div className="chart-x">
+            <span>Nov 01</span><span>Nov 06</span><span>Nov 12</span><span>Nov 18</span><span>Nov 24</span><span>Nov 30</span>
+          </div>
+        </div>
+
+        <div className="duo">
+          <div className="card">
+            <div className="card-hd"><div className="card-t">By model</div></div>
+            {D.costByModel.map((m,i) => (
+              <div className="mb-row" key={i}>
+                <div>
+                  <div className="mb-name">{m.model}</div>
+                  <div className="mb-jobs">{m.jobs.toLocaleString()} jobs</div>
+                </div>
+                <div className="mb-bar"><div className="mb-bar-f" style={{width: (m.sar/maxModelSar*100) + "%"}}/></div>
+                <div className="mb-sar">SAR {m.sar}</div>
+                <div className="mb-pct">{m.share}%</div>
+              </div>
+            ))}
+          </div>
+
+          <div>
+            <div className="card">
+              <div className="card-hd"><div className="card-t">Monthly budget</div><div className="cd-eb" style={{color:"var(--teal)"}}>on track</div></div>
+              <div style={{fontFamily:"var(--mono)", fontSize:11, color:"var(--mut)", letterSpacing:".08em", marginBottom:8}}>
+                SAR {total.toFixed(0)} SPENT · SAR {(budget-total).toFixed(0)} REMAINING · BUDGET SAR {budget}
+              </div>
+              <div className="budget-bar">
+                <div className="budget-bar-f" style={{width: budgetPct + "%"}}/>
+                <div className="mk" style={{insetInlineStart: "75%"}} title="Alert at 75%"/>
+                <div className="pct">{budgetPct.toFixed(0)}%</div>
+              </div>
+              <div style={{fontSize:12.5, color:"var(--ink-2)", lineHeight:1.55}}>
+                At current pace you'll finish November at <strong>SAR {(avg*30).toFixed(0)}</strong> — 
+                {avg*30 > budget ? <span style={{color:"var(--orange)", fontStyle:"italic", fontFamily:"var(--serif)"}}> over budget by SAR {(avg*30-budget).toFixed(0)}.</span> : <span style={{color:"var(--teal)"}}> under budget.</span>}
+              </div>
+              <div style={{display:"flex", gap:8, marginTop:14}}>
+                <button className="btn ghost sm" style={{flex:1, justifyContent:"center"}}>Adjust budget</button>
+                <button className="btn ghost sm" style={{flex:1, justifyContent:"center"}}>Set alert</button>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="card-hd"><div className="card-t">Cost alerts</div></div>
+              <div className="alert">
+                <div className="alert-ic">Nov 22</div>
+                <div className="alert-m">Daily spend hit <strong>SAR 118</strong> — 2.0× your average. Driven by batch <code style={{fontFamily:"var(--mono)"}}>b_2847</code> on JAIS-13B.</div>
+                <button className="btn ghost sm">Review</button>
+              </div>
+              <div className="alert" style={{borderColor:"var(--teal)", background:"color-mix(in oklab, var(--teal) 5%, transparent)"}}>
+                <div className="alert-ic" style={{color:"var(--teal)"}}>Nov 15</div>
+                <div className="alert-m">Switched ALLaM-7B jobs from RTX 4090 to RTX 4080 → saved <strong style={{color:"var(--teal)"}}>SAR 184</strong> this month with no latency impact.</div>
+                <button className="btn ghost sm">Details</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </window.AppFrame>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<Cost />);
+</script>
+<script src="../assets/app-polish.js"></script>
+</body>
+</html>

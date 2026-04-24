@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>DCP Ops — Support Tickets</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../assets/dcp-kit.css" />
+<link rel="stylesheet" href="../assets/ops-shell.css" />
+<style>
+.tk-row { display: grid; grid-template-columns: 90px 1fr 160px 140px 120px 90px 100px; gap: 14px; padding: 12px 16px; border-bottom: 1px solid var(--hair); align-items: center; cursor: pointer; }
+.tk-row:hover { background: var(--bg-2); }
+.tk-row .subj { font-size: 13px; color: var(--ink); line-height: 1.45; }
+.tk-row .tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+.tk-tag { font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em; color: var(--mut); border: 1px solid var(--hair-2); padding: 1px 5px; }
+.tk-prio { font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; padding: 2px 6px; display: inline-block; }
+.tk-prio.high { color: var(--red); border: 1px solid color-mix(in oklab, var(--red) 40%, transparent); }
+.tk-prio.normal { color: var(--ink-2); border: 1px solid var(--hair-2); }
+.tk-prio.low { color: var(--mut); border: 1px solid var(--hair); }
+</style>
+</head>
+<body class="ops">
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../assets/data-ops-admin.js"></script>
+<script type="text/babel" src="../assets/ops-shell.jsx"></script>
+<script type="text/babel">
+const { useState } = React;
+const A = window.DCP_OPS_ADMIN;
+const { OpsShell, Chip, Kpi } = window;
+
+function App() {
+  const [state, setState] = useState("all");
+  const states = [...new Set(A.tickets.map(t=>t.state))];
+  const rows = state==="all" ? A.tickets : A.tickets.filter(t=>t.state===state);
+
+  return (
+    <OpsShell current="tickets" crumb="Support Tickets" alarms={1} env="PROD" build={A.build}>
+      <div className="ops-page">
+        <div className="ops-page-hd">
+          <div>
+            <div className="ops-page-eb">Ops · Success</div>
+            <h1 className="ops-page-h1">Support <em>tickets</em></h1>
+            <div className="ops-page-lede">
+              Inbound tickets from renters and providers. Enterprise accounts are SLA'd to 1-hour first-response — they show up at the top.
+            </div>
+          </div>
+          <div className="ops-page-actions">
+            <button className="ops-btn">Macros</button>
+            <button className="ops-btn primary">+ New ticket</button>
+          </div>
+        </div>
+
+        <div className="ops-grid c4" style={{marginBottom:14}}>
+          <Kpi label="Open"              value={A.ticket_counters.open} delta={A.ticket_counters.high + " high priority"} deltaKind="down" em />
+          <Kpi label="Awaiting customer" value={A.ticket_counters.awaiting_customer} delta="median wait 1.4d" deltaKind="neutral" />
+          <Kpi label="Closed · 7d"       value={A.ticket_counters.closed_7d} delta="CSAT 4.6 / 5" />
+          <Kpi label="First-response"    value={A.ticket_counters.avg_first_response_h + "h"} delta="SLA ≤ 2h · enterprise ≤ 1h" />
+        </div>
+
+        <div className="ops-toolbar">
+          <div className="ops-filters">
+            <button className={"ops-filter " + (state==="all"?"on":"")} onClick={()=>setState("all")}>All <span className="ct">{A.tickets.length}</span></button>
+            {states.map(s => (
+              <button key={s} className={"ops-filter " + (state===s?"on":"")} onClick={()=>setState(s)}>{s.replace(/-/g," ")} <span className="ct">{A.tickets.filter(t=>t.state===s).length}</span></button>
+            ))}
+          </div>
+          <input className="ops-search" placeholder="ticket / customer / tag…" />
+        </div>
+
+        <div className="ops-card" style={{padding:0}}>
+          <div style={{display:"grid", gridTemplateColumns:"90px 1fr 160px 140px 120px 90px 100px", gap:14, padding:"8px 16px", background:"var(--bg-2)", borderBottom:"1px solid var(--hair-2)", fontFamily:"var(--mono)", fontSize:10, letterSpacing:".12em", color:"var(--mut)", textTransform:"uppercase"}}>
+            <span>ID</span><span>Subject</span><span>Customer</span><span>Assignee</span><span>State</span><span>Priority</span><span>Opened</span>
+          </div>
+          {rows.map(t => (
+            <div key={t.id} className="tk-row">
+              <span className="mono" style={{color:"var(--accent)", fontSize:11}}>{t.id}</span>
+              <div>
+                <div className="subj">{t.subj}</div>
+                <div className="tags">
+                  {t.tags.map(tg => <span key={tg} className="tk-tag">{tg}</span>)}
+                  <span className="mono dim" style={{fontSize:10, marginInlineStart:6}}>last reply {t.last_reply}</span>
+                </div>
+              </div>
+              <span className="mono" style={{fontSize:11, color:"var(--ink-2)"}}>{t.customer}</span>
+              <span style={{fontSize:12, color:"var(--ink-2)"}}>{t.assignee}</span>
+              <span><Chip kind={t.state==="new"?"warn":t.state==="in-progress"?"info":t.state==="backlog"?"mut":"ok"} dot>{t.state.replace(/-/g," ")}</Chip></span>
+              <span><span className={"tk-prio " + t.priority}>{t.priority}</span></span>
+              <span className="mono dim" style={{fontSize:11}}>{t.opened}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </OpsShell>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

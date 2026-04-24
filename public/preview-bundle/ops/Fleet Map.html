@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>DCP Ops — Fleet Map</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+
+<link rel="stylesheet" href="../assets/dcp-kit.css" />
+<link rel="stylesheet" href="../assets/ops-shell.css" />
+
+<style>
+.fleet-map-card { padding: 0; overflow: hidden; }
+.fleet-map-svg { display:block; width: 100%; height: auto; background:
+  radial-gradient(ellipse at 40% 45%, #141924 0%, #0c1019 70%); }
+
+/* grid overlay */
+.fm-grid-pattern line { stroke: #1a2130; stroke-width: 0.5; }
+
+/* Region halo */
+.fm-pulse { transform-origin: center; transform-box: fill-box; animation: fm-pulse 3s ease-out infinite; }
+@keyframes fm-pulse {
+  0%   { opacity: .55; transform: scale(.5); }
+  100% { opacity: 0;   transform: scale(2.4); }
+}
+.fm-region { cursor: pointer; transition: transform .2s; transform-box: fill-box; transform-origin: center; }
+.fm-region:hover { transform: scale(1.08); }
+.fm-region.sel .fm-region-ring { stroke-width: 2.5; stroke: var(--accent); }
+
+/* Flow path animation */
+.fm-flow path { stroke: var(--accent); stroke-opacity: .25; fill: none; stroke-width: 1; stroke-dasharray: 2 6; animation: fm-flow 2s linear infinite; }
+.fm-flow path.hot { stroke: var(--amber); stroke-opacity: .4; stroke-dasharray: 3 3; }
+@keyframes fm-flow { to { stroke-dashoffset: -48; } }
+
+/* Data crosshair ticks (corner marks) */
+.fm-tick { stroke: var(--dim); stroke-width: 0.5; }
+
+.fm-coord { font-family: var(--mono); font-size: 8px; fill: var(--dim); letter-spacing: .1em; }
+
+.fm-label-group text { pointer-events: none; }
+.fm-label-name { font-family: var(--serif); font-size: 14px; fill: var(--ink); font-style: italic; }
+.fm-label-code { font-family: var(--mono); font-size: 9px; fill: var(--accent); letter-spacing: .14em; }
+.fm-label-sub  { font-family: var(--mono); font-size: 9px; fill: var(--mut); letter-spacing: .04em; }
+
+.fm-tip {
+  position: absolute; pointer-events: none;
+  background: #0a0c10; border: 1px solid var(--accent);
+  padding: 10px 12px; font-family: var(--mono); font-size: 10.5px;
+  color: var(--ink); min-width: 200px; z-index: 5;
+  letter-spacing: .03em; transition: opacity .15s;
+}
+.fm-tip .t { color: var(--accent); font-size: 11px; margin-bottom: 6px; letter-spacing: .08em; text-transform: uppercase; border-bottom: 1px solid var(--hair-2); padding-bottom: 4px; }
+.fm-tip .row { display: flex; justify-content: space-between; padding: 2px 0; color: var(--mut); }
+.fm-tip .row .v { color: var(--ink-2); }
+
+.fm-legend { padding: 10px 14px; background: var(--paper); border-top: 1px solid var(--hair); display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: center; font-family: var(--mono); font-size: 10.5px; color: var(--mut); letter-spacing: .06em; text-transform: uppercase; }
+.fm-legend .row { display: inline-flex; align-items: center; gap: 6px; margin-inline-end: 16px; }
+.fm-legend .sw { width: 12px; height: 12px; display: inline-block; }
+.fm-legend .sw.ac { background: var(--accent); }
+.fm-legend .sw.am { background: var(--amber); }
+.fm-legend .sw.dm { background: var(--dim); }
+
+/* KPI strip on right */
+.fm-side { display: grid; gap: 10px; }
+.fm-side-kpi { background: var(--paper); border: 1px solid var(--hair); padding: 12px 14px; }
+.fm-side-kpi .lbl { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; color: var(--mut); text-transform: uppercase; }
+.fm-side-kpi .v   { font-family: var(--serif); font-size: 26px; line-height: 1.05; margin-top: 3px; }
+.fm-side-kpi .v em { color: var(--accent); font-style: italic; }
+.fm-side-kpi .v span { font-family: var(--mono); font-size: 11px; color: var(--mut); margin-inline-start: 4px; }
+.fm-side-kpi .d  { font-family: var(--mono); font-size: 10.5px; color: var(--ink-2); margin-top: 3px; letter-spacing: .04em; }
+
+.fm-region-bar { display:grid; grid-template-columns: 32px 1fr auto; align-items: center; gap: 10px; padding: 8px 10px; border-bottom: 1px solid var(--hair); cursor: pointer; }
+.fm-region-bar:hover { background: var(--bg-2); }
+.fm-region-bar.sel { background: color-mix(in oklab, var(--accent) 12%, transparent); }
+.fm-region-bar .code { font-family: var(--mono); font-size: 10.5px; color: var(--accent); letter-spacing: .1em; }
+.fm-region-bar .name { font-size: 12.5px; color: var(--ink); }
+.fm-region-bar .stat { font-family: var(--mono); font-size: 10.5px; color: var(--mut); letter-spacing: .04em; display: block; margin-top: 2px; }
+.fm-region-bar .util { font-family: var(--mono); font-size: 11px; color: var(--ink-2); }
+</style>
+</head>
+<body class="ops">
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script src="../assets/data-ops-admin.js"></script>
+<script type="text/babel" src="../assets/ops-shell.jsx"></script>
+
+<script type="text/babel">
+const { useState, useRef } = React;
+const A = window.DCP_OPS_ADMIN;
+const { OpsShell, Chip, Bar, Kpi } = window;
+
+function fmt(n, d=0) { return n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }); }
+function sar(n) { return "SAR " + fmt(Math.round(n)); }
+
+/* Stylized Saudi Arabia outline — not geographically exact, editorially faithful.
+ * Simplified polygon on 1000×800 viewBox.  */
+const KSA_OUTLINE = "M 152 218 L 196 196 L 240 210 L 286 200 L 332 214 L 382 212 L 432 208 L 482 202 L 530 194 L 574 186 L 620 188 L 660 204 L 696 226 L 720 260 L 738 298 L 744 342 L 742 382 L 726 424 L 712 466 L 694 502 L 672 536 L 654 566 L 626 586 L 598 608 L 564 624 L 526 636 L 488 648 L 448 656 L 412 668 L 382 682 L 356 694 L 338 688 L 310 676 L 284 662 L 260 640 L 244 610 L 232 578 L 222 542 L 216 506 L 212 470 L 210 432 L 204 396 L 194 360 L 184 320 L 172 278 L 160 242 Z";
+
+function FleetMap({ selected, onSelect }) {
+  const wrapRef = useRef(null);
+  const [tip, setTip] = useState(null);
+  const regions = A.regions;
+
+  return (
+    <div className="fleet-map-card ops-card" style={{padding:0}}>
+      <div style={{padding:"14px 18px", borderBottom:"1px solid var(--hair)", display:"grid", gridTemplateColumns:"1fr auto", gap:12, alignItems:"baseline"}}>
+        <div>
+          <div style={{fontFamily:"var(--mono)", fontSize:10, letterSpacing:".16em", color:"var(--accent)", textTransform:"uppercase"}}>Fleet · Kingdom of Saudi Arabia</div>
+          <div style={{fontFamily:"var(--serif)", fontSize:22, marginTop:3}}>Live <em style={{color:"var(--accent)", fontStyle:"italic"}}>487</em> providers · <em style={{color:"var(--accent)", fontStyle:"italic"}}>1,850</em> GPUs across 6 regions</div>
+        </div>
+        <div style={{fontFamily:"var(--mono)", fontSize:10.5, color:"var(--mut)", letterSpacing:".04em"}}>Updated 2s ago · auto-refresh 30s</div>
+      </div>
+
+      <div ref={wrapRef} style={{position:"relative"}}>
+      <svg className="fleet-map-svg" viewBox="0 0 1000 800" preserveAspectRatio="xMidYMid meet">
+        {/* crosshair corner ticks */}
+        <g className="fm-ticks">
+          {[40, 760].map(x => [40, 760].map(y => (
+            <g key={`${x}-${y}`}>
+              <line className="fm-tick" x1={x-8} y1={y} x2={x+8} y2={y} />
+              <line className="fm-tick" x1={x} y1={y-8} x2={x} y2={y+8} />
+            </g>
+          )))}
+          <text className="fm-coord" x="40" y="28" textAnchor="start">24°00' N</text>
+          <text className="fm-coord" x="960" y="28" textAnchor="end">KSA · POP MAP</text>
+          <text className="fm-coord" x="40" y="794" textAnchor="start">36°00' E — 56°00' E</text>
+          <text className="fm-coord" x="960" y="794" textAnchor="end">DCP v2.4.11 · {A.env}</text>
+        </g>
+
+        {/* Subtle grid */}
+        <g className="fm-grid-pattern">
+          {Array.from({length:11}).map((_,i) => (
+            <line key={"h"+i} x1="40" x2="960" y1={60+i*68} y2={60+i*68} />
+          ))}
+          {Array.from({length:14}).map((_,i) => (
+            <line key={"v"+i} x1={60+i*68} x2={60+i*68} y1="40" y2="760" />
+          ))}
+        </g>
+
+        {/* Saudi Arabia outline */}
+        <path d={KSA_OUTLINE}
+              fill="#0e1420" stroke="#2a3142" strokeWidth="1.5"
+              strokeLinejoin="round" />
+
+        {/* Persian Gulf / Red Sea water hint labels */}
+        <text x="90" y="560" className="fm-coord" style={{letterSpacing:".3em", opacity:.5, fill:"var(--dim)"}}>RED · SEA</text>
+        <text x="770" y="260" className="fm-coord" style={{letterSpacing:".3em", opacity:.5, fill:"var(--dim)"}}>GULF</text>
+
+        {/* Routing flows (rendered beneath pins) */}
+        <g className="fm-flow">
+          {A.flows.map((f, i) => {
+            const from = regions.find(r => r.id === f.from);
+            const to   = regions.find(r => r.id === f.to);
+            const mx = (from.x + to.x) / 2;
+            const my = (from.y + to.y) / 2 - 40;  // curve lifted
+            const isHot = f.weight >= 4;
+            return (
+              <path key={i}
+                    d={`M ${from.x} ${from.y} Q ${mx} ${my} ${to.x} ${to.y}`}
+                    strokeWidth={0.8 + f.weight * 0.4}
+                    className={isHot ? "hot" : ""} />
+            );
+          })}
+        </g>
+
+        {/* Region pins */}
+        {regions.map(r => {
+          const pinR = Math.max(6, Math.sqrt(r.gpus) * 0.9);
+          const isSel = selected === r.id;
+          const warn = r.flag === "capacity-tight" || r.util > 0.85;
+          const isNew = r.flag === "new";
+          return (
+            <g key={r.id}
+               className={"fm-region " + (isSel ? "sel" : "")}
+               onClick={() => onSelect(r.id)}
+               onMouseEnter={(e) => {
+                 const rect = wrapRef.current.getBoundingClientRect();
+                 setTip({ r, x: e.clientX - rect.left + 14, y: e.clientY - rect.top + 14 });
+               }}
+               onMouseLeave={() => setTip(null)}
+               onMouseMove={(e) => {
+                 const rect = wrapRef.current.getBoundingClientRect();
+                 setTip({ r, x: e.clientX - rect.left + 14, y: e.clientY - rect.top + 14 });
+               }}>
+              <circle cx={r.x} cy={r.y} r={pinR + 2} className="fm-pulse"
+                      fill={warn ? "var(--amber)" : "var(--accent)"} />
+              <circle cx={r.x} cy={r.y} r={pinR}
+                      fill={warn ? "var(--amber)" : isNew ? "var(--accent-2, var(--accent))" : "var(--accent)"} />
+              <circle cx={r.x} cy={r.y} r={pinR + 6}
+                      className="fm-region-ring"
+                      fill="none" stroke={warn ? "var(--amber)" : "var(--accent)"} strokeOpacity=".4"
+                      strokeWidth="1" />
+            </g>
+          );
+        })}
+
+        {/* Region labels (offset by hand to avoid overlap) */}
+        <g className="fm-label-group">
+          {regions.map(r => {
+            const offsets = {
+              ruh:  { dx: 18, dy: -10, anchor: "start" },
+              jed:  { dx: -14, dy: -6, anchor: "end" },
+              dmm:  { dx: 18, dy: -6, anchor: "start" },
+              med:  { dx: -14, dy: -6, anchor: "end" },
+              abh:  { dx: -14, dy: 22, anchor: "end" },
+              neom: { dx: 18, dy: 4, anchor: "start" },
+            }[r.id];
+            return (
+              <g key={r.id} transform={`translate(${r.x + offsets.dx}, ${r.y + offsets.dy})`}>
+                <text className="fm-label-code" textAnchor={offsets.anchor}>{r.code}</text>
+                <text className="fm-label-name" textAnchor={offsets.anchor} y="18">{r.name}</text>
+                <text className="fm-label-sub" textAnchor={offsets.anchor} y="32">{r.online} GPU · {Math.round(r.util*100)}% util</text>
+              </g>
+            );
+          })}
+        </g>
+
+        {/* Center stamp */}
+        <g transform="translate(480, 720)" opacity=".6">
+          <text className="fm-coord" textAnchor="middle" style={{letterSpacing:".4em"}}>◆  KINGDOM · DISTRIBUTED COMPUTE · PROTOCOL  ◆</text>
+        </g>
+      </svg>
+
+      {tip && (
+        <div className="fm-tip" style={{left: tip.x, top: tip.y}}>
+          <div className="t">{tip.r.code} · {tip.r.name}</div>
+          <div className="row"><span>Providers</span><span className="v">{tip.r.providers}</span></div>
+          <div className="row"><span>Rigs · GPUs</span><span className="v">{tip.r.rigs} · {tip.r.gpus}</span></div>
+          <div className="row"><span>Online</span><span className="v">{tip.r.online} / {tip.r.gpus}</span></div>
+          <div className="row"><span>Utilization</span><span className="v">{Math.round(tip.r.util*100)}%</span></div>
+          <div className="row"><span>p50 / p95</span><span className="v">{tip.r.p50} / {tip.r.p95} ms</span></div>
+          <div className="row"><span>Tokens/s</span><span className="v">{fmt(tip.r.tps)}</span></div>
+          <div className="row"><span>Jobs · active</span><span className="v">{fmt(tip.r.jobs_active)}</span></div>
+          <div className="row"><span>SAR/hour</span><span className="v">{fmt(tip.r.sar_per_hour)}</span></div>
+          {tip.r.flag && <div className="row" style={{marginTop:4, paddingTop:4, borderTop:"1px dashed var(--hair)", color:"var(--amber)"}}><span>Flag</span><span className="v" style={{color:"var(--amber)"}}>{tip.r.flag}</span></div>}
+        </div>
+      )}
+      </div>
+
+      <div className="fm-legend">
+        <div>
+          <span className="row"><span className="sw ac" /> ONLINE &amp; HEALTHY</span>
+          <span className="row"><span className="sw am" /> WARN · CAPACITY TIGHT</span>
+          <span className="row"><span className="sw dm" /> BOUNDARY · KINGDOM OF SAUDI ARABIA</span>
+        </div>
+        <div>SIZE ∝ GPU COUNT · LINES = LIVE ROUTING · HOVER A PIN</div>
+      </div>
+    </div>
+  );
+}
+
+function RegionList({ selected, onSelect }) {
+  return (
+    <div className="ops-card" style={{padding:0}}>
+      <div style={{padding:"12px 14px", borderBottom:"1px solid var(--hair)", display:"flex", justifyContent:"space-between", alignItems:"baseline"}}>
+        <div className="ops-card-t">Regions</div>
+        <span className="ops-card-eb">{A.regions.length} · SORTED BY CAPACITY</span>
+      </div>
+      {A.regions.map(r => (
+        <div key={r.id} className={"fm-region-bar " + (selected === r.id ? "sel" : "")} onClick={() => onSelect(r.id)}>
+          <div>
+            <div className="code">{r.code}</div>
+          </div>
+          <div>
+            <div className="name">{r.name} {r.flag && <Chip kind={r.flag==="new"?"info":"warn"}>{r.flag}</Chip>}</div>
+            <div className="stat">{r.providers} prv · {r.gpus} GPU · {fmt(r.sar_per_hour)} SAR/h</div>
+          </div>
+          <div className="util">
+            <div style={{marginBottom:3, textAlign:"end"}}>{Math.round(r.util*100)}%</div>
+            <Bar v={r.util} color={r.util>0.8?"amber":"accent"} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RegionDetail({ region }) {
+  const r = A.regions.find(x => x.id === region);
+  if (!r) return null;
+  const providers = A.provider_directory.filter(p => p.region === region);
+
+  return (
+    <div className="ops-card">
+      <div className="ops-card-hd">
+        <div>
+          <div className="ops-card-eb accent">{r.code} · {r.pop}</div>
+          <div className="ops-card-t" style={{fontSize:24, marginTop:2}}><em style={{color:"var(--accent)", fontStyle:"italic"}}>{r.name}</em></div>
+        </div>
+        <div style={{display:"flex", gap:6}}>
+          <button className="ops-btn sm">Drain</button>
+          <button className="ops-btn sm">Route −10%</button>
+          <button className="ops-btn sm primary">Runbook</button>
+        </div>
+      </div>
+
+      <div className="ops-grid c3" style={{marginBottom:14}}>
+        <div className="fm-side-kpi"><div className="lbl">GPUs online</div><div className="v"><em>{r.online}</em><span>/{r.gpus}</span></div></div>
+        <div className="fm-side-kpi"><div className="lbl">Utilization</div><div className="v">{Math.round(r.util*100)}<span>%</span></div></div>
+        <div className="fm-side-kpi"><div className="lbl">Tokens / sec</div><div className="v">{fmt(Math.round(r.tps/1000))}<span>k</span></div></div>
+        <div className="fm-side-kpi"><div className="lbl">p50 / p95</div><div className="v">{r.p50}<span>/ {r.p95} ms</span></div></div>
+        <div className="fm-side-kpi"><div className="lbl">Jobs active</div><div className="v">{fmt(r.jobs_active)}</div></div>
+        <div className="fm-side-kpi"><div className="lbl">Revenue · hour</div><div className="v"><em>{fmt(r.sar_per_hour)}</em><span>SAR</span></div></div>
+      </div>
+
+      <div style={{fontFamily:"var(--mono)", fontSize:10, letterSpacing:".14em", color:"var(--mut)", textTransform:"uppercase", paddingBottom:6, borderBottom:"1px solid var(--hair)", marginBottom:8}}>Top providers in {r.code}</div>
+      <table className="ops-tbl dense">
+        <thead><tr><th>Provider</th><th>Tier</th><th className="num">GPUs</th><th className="num">Tokens/s</th><th className="num">SAR 24h</th><th className="num">Reliability</th></tr></thead>
+        <tbody>
+          {providers.map(p => (
+            <tr key={p.id}>
+              <td><div style={{color:"var(--ink)"}}>{p.name}</div><div className="mono dim" style={{fontSize:10}}>{p.id} · joined {p.joined}</div></td>
+              <td><Chip kind={p.tier==="A"?"ok":p.tier==="B"?"info":"mut"}>Tier {p.tier}</Chip></td>
+              <td className="num">{p.online}/{p.gpus}</td>
+              <td className="num">{fmt(p.tps)}</td>
+              <td className="num">{fmt(p.sar_24h)}</td>
+              <td className="num">{(p.rel*100).toFixed(1)}%</td>
+            </tr>
+          ))}
+          {providers.length === 0 && <tr><td colSpan="6" className="dim" style={{padding:16, textAlign:"center"}}>No top providers in this region in the sample window.</td></tr>}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function App() {
+  const [sel, setSel] = useState("ruh");
+  const total = A.regions.reduce((a,r) => ({ providers: a.providers + r.providers, gpus: a.gpus + r.gpus, online: a.online + r.online, sar: a.sar + r.sar_per_hour }), { providers:0, gpus:0, online:0, sar:0 });
+
+  return (
+    <OpsShell current="fleet" crumb="Fleet Map" alarms={1} env="PROD" build={A.build}
+      topbarRight={<button className="ops-tb-btn" title="Refresh">↻ Refresh</button>}>
+      <div className="ops-page">
+        <div className="ops-page-hd">
+          <div>
+            <div className="ops-page-eb">Ops · Fleet</div>
+            <h1 className="ops-page-h1">Fleet map · <em>Kingdom</em></h1>
+            <div className="ops-page-lede">
+              Every provider, every rig, every GPU — geographic view of the DCP fleet. Hover a region for live stats; click to drill into that pop. Lines show live job-routing flows between regions.
+            </div>
+          </div>
+          <div className="ops-page-actions">
+            <button className="ops-btn">Export fleet CSV</button>
+            <button className="ops-btn primary">Routing controls</button>
+          </div>
+        </div>
+
+        <div style={{display:"grid", gridTemplateColumns:"1fr 320px", gap:12, marginBottom:12}}>
+          <FleetMap selected={sel} onSelect={setSel} />
+          <RegionList selected={sel} onSelect={setSel} />
+        </div>
+
+        <RegionDetail region={sel} />
+
+        <div className="ops-section">
+          <div className="ops-section-hd">
+            <div className="ops-section-t">Aggregate</div>
+            <div className="ops-section-eb">FLEET-WIDE</div>
+          </div>
+          <div className="ops-grid c4">
+            <Kpi label="Providers online" value={`${A.topline.providers_online} / ${A.topline.providers_total}`} delta={`${Math.round((A.topline.providers_online/A.topline.providers_total)*100)}% availability`} em />
+            <Kpi label="GPUs online"      value={`${fmt(A.topline.gpus_online)} / ${fmt(A.topline.gpus_total)}`} delta={`${Math.round((A.topline.gpus_online/A.topline.gpus_total)*100)}% availability`} />
+            <Kpi label="Fleet utilization" value={`${Math.round(A.topline.gpus_utilization*100)}`} unit="%" delta="healthy band 55–75%" deltaKind="neutral" />
+            <Kpi label="Revenue / hour"   value={sar(total.sar)} delta="aggregate across regions" deltaKind="neutral" />
+          </div>
+        </div>
+
+        <div className="ops-section">
+          <div className="ops-section-hd">
+            <div className="ops-section-t">Live routing flows</div>
+            <div className="ops-section-eb">{A.flows.length} EDGES · {fmt(A.flows.reduce((a,f)=>a+f.jobs,0))} JOBS IN FLIGHT</div>
+          </div>
+          <div className="ops-card" style={{padding:0}}>
+            <table className="ops-tbl dense">
+              <thead><tr><th>From</th><th>To</th><th className="num">Weight</th><th className="num">Jobs in flight</th><th>Utilization</th></tr></thead>
+              <tbody>
+                {A.flows.map((f,i) => {
+                  const from = A.regions.find(r=>r.id===f.from);
+                  const to   = A.regions.find(r=>r.id===f.to);
+                  return (
+                    <tr key={i}>
+                      <td><span className="mono" style={{color:"var(--accent)"}}>{from.code}</span> <span className="dim">· {from.name}</span></td>
+                      <td><span className="mono" style={{color:"var(--accent)"}}>{to.code}</span> <span className="dim">· {to.name}</span></td>
+                      <td className="num">{f.weight}</td>
+                      <td className="num">{fmt(f.jobs)}</td>
+                      <td style={{maxWidth:200}}><Bar v={f.weight/5} color={f.weight>=4?"amber":"accent"} /></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </OpsShell>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

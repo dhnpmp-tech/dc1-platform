@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-palette="midnight">
+<head>
+<meta charset="utf-8">
+<title>Compare GPUs — DCP</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/dcp-kit.css">
+<link rel="stylesheet" href="../assets/app-shell.css">
+<link rel="stylesheet" href="../assets/app-i18n-rtl.css">
+<style>
+  .main-scroll { grid-area: main; overflow-y: auto; padding: 32px 40px 60px; }
+  .gc-head { display:grid; grid-template-columns:1fr auto; gap:24px; align-items:baseline; padding-bottom:20px; border-bottom:1px solid var(--hair); margin-bottom:28px; }
+  .gc-eb { font-family:var(--mono); font-size:11px; letter-spacing:.16em; color:var(--teal); text-transform:uppercase; }
+  .gc-h1 { font-family:var(--serif); font-weight:400; font-size:56px; line-height:1.12; margin:10px 0 14px; letter-spacing:-.005em; padding-bottom:4px; }
+  .gc-h1 em { color:var(--orange); font-style:italic; }
+  .gc-lede { color:var(--ink-2); font-size:15px; max-width:64ch; line-height:1.55; }
+
+  .seg { display:inline-flex; gap:0; border:1px solid var(--hair); background:var(--paper); }
+  .seg button { padding:8px 14px; font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; border:0; background:transparent; color:var(--mut); cursor:pointer; border-inline-end: 1px solid var(--hair); }
+  .seg button:last-child { border-inline-end: 0; }
+  .seg button.on { background:var(--ink); color:var(--paper); }
+
+  .gc-table { width:100%; border-collapse:collapse; background:var(--paper); border:1px solid var(--hair); font-size:13px; margin-bottom:28px; }
+  .gc-table th { text-align:start; padding:14px 16px; font-family:var(--mono); font-size:10.5px; letter-spacing:.12em; color:var(--mut); text-transform:uppercase; background:var(--bg-2); border-bottom:1px solid var(--hair); }
+  .gc-table td { padding:18px 16px; border-bottom:1px dashed var(--hair); vertical-align:middle; }
+  .gc-table tr:last-child td { border-bottom:0; }
+  .gc-table tr.best { background:color-mix(in oklab, var(--teal) 5%, transparent); }
+  .gpu-name { font-family:var(--serif); font-size:22px; line-height:1.15; }
+  .gpu-vram { font-family:var(--mono); font-size:10.5px; color:var(--mut); letter-spacing:.06em; margin-top:3px; }
+  .tok-cell { font-family:var(--serif); font-size:22px; font-style:italic; color:var(--orange); }
+  .tok-cell .u { font-family:var(--mono); font-size:10px; color:var(--mut); letter-spacing:.08em; font-style:normal; display:block; margin-top:2px; }
+  .tok-bar { width:100%; height:4px; background:var(--hair); margin-top:6px; position:relative; }
+  .tok-bar-f { position:absolute; inset:0 auto 0 0; background:var(--teal); }
+
+  .sar-cell { font-family:var(--serif); font-size:26px; font-style:italic; color:var(--ink); }
+  .sar-cell .u { font-family:var(--mono); font-size:10px; color:var(--mut); letter-spacing:.08em; font-style:normal; }
+  .avail-cell { font-family:var(--mono); font-size:11px; color:var(--teal); letter-spacing:.05em; }
+  .avail-cell::before { content:"●"; margin-inline-end:5px; }
+  .best-tag { font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; padding:3px 7px; border:1px solid var(--hair); color:var(--mut); }
+  .best-tag.w { color:var(--teal); border-color:var(--teal); }
+
+  .duo { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+  .pick-card { background:var(--paper); border:1px solid var(--hair); padding:22px; }
+  .pick-card.best { border-color:var(--teal); border-top:3px solid var(--teal); }
+  .pick-k { font-family:var(--mono); font-size:10.5px; letter-spacing:.12em; color:var(--mut); text-transform:uppercase; }
+  .pick-v { font-family:var(--serif); font-size:44px; font-weight:400; line-height:1.1; margin-top:6px; padding-bottom:4px; }
+  .pick-v em { color:var(--orange); font-style:italic; }
+  .pick-sub { color:var(--ink-2); font-size:13.5px; line-height:1.55; margin-top:10px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../assets/data-app.js"></script>
+<script src="../assets/i18n.js?v=2"></script>
+<script src="../assets/data-renter.js"></script>
+<script type="text/babel" src="../assets/dcp-kit.jsx"></script>
+<script type="text/babel" src="../assets/app-shell.jsx"></script>
+<script type="text/babel">
+const { useState, useMemo } = React;
+const D = window.DCP_RENTER;
+
+function Compare() {
+  const [model, setModel] = useState("allam");
+  const tokKey = { allam:"tok_allam", jais:"tok_jais", falcon:"tok_falcon" }[model];
+  const tokLabel = { allam:"ALLaM-7B", jais:"JAIS-13B", falcon:"Falcon-H1" }[model];
+
+  const rows = D.gpus;
+  const maxTok = Math.max(...rows.map(r => r[tokKey] || 0));
+  const sortedByValue = [...rows].filter(r => r[tokKey]>0).sort((a,b)=> (b[tokKey]/b.sar_hr) - (a[tokKey]/a.sar_hr));
+  const bestValue = sortedByValue[0];
+  const cheapest = [...rows].filter(r => r[tokKey]>0).sort((a,b)=> a.sar_hr - b.sar_hr)[0];
+  const fastest = [...rows].filter(r => r[tokKey]>0).sort((a,b)=> b[tokKey] - a[tokKey])[0];
+
+  return (
+    <window.AppFrame current="browse" crumb="Compare GPUs" topbarRight={<a href="./Browse Rigs.html" className="btn ghost sm">← Browse</a>}>
+      <div className="main-scroll">
+        <div className="gc-head">
+          <div>
+            <div className="gc-eb">benchmark · live fleet data</div>
+            <h1 className="gc-h1">Compare <em>5 GPU classes</em> on {tokLabel}.</h1>
+            <div className="gc-lede">Throughput numbers are 7-day rolling medians from live jobs run across the DCP fleet — not vendor spec sheets. Pick a model to see how each GPU actually performs on Arabic workloads.</div>
+          </div>
+          <div className="seg">
+            <button className={model==="allam"?"on":""} onClick={()=>setModel("allam")}>ALLaM-7B</button>
+            <button className={model==="jais"?"on":""} onClick={()=>setModel("jais")}>JAIS-13B</button>
+            <button className={model==="falcon"?"on":""} onClick={()=>setModel("falcon")}>Falcon-H1</button>
+          </div>
+        </div>
+
+        <div className="duo" style={{marginBottom:28, gridTemplateColumns:"1fr 1fr 1fr"}}>
+          <div className="pick-card best">
+            <div className="pick-k">Best value · tok/SAR</div>
+            <div className="pick-v"><em>{bestValue.name.split(" · ")[0]}</em></div>
+            <div className="pick-sub"><strong>{(bestValue[tokKey]/bestValue.sar_hr).toFixed(1)} tok per SAR</strong> at SAR {bestValue.sar_hr}/hr. {bestValue.avail}.</div>
+          </div>
+          <div className="pick-card">
+            <div className="pick-k">Fastest</div>
+            <div className="pick-v">{fastest.name.split(" · ")[0]}</div>
+            <div className="pick-sub"><strong>{fastest[tokKey]} tok/s</strong> median throughput on {tokLabel}. Best for interactive chat and low-latency APIs.</div>
+          </div>
+          <div className="pick-card">
+            <div className="pick-k">Cheapest</div>
+            <div className="pick-v">{cheapest.name.split(" · ")[0]}</div>
+            <div className="pick-sub"><strong>SAR {cheapest.sar_hr}/hr</strong>. Best for batch embedding jobs where latency doesn't matter.</div>
+          </div>
+        </div>
+
+        <table className="gc-table">
+          <thead>
+            <tr>
+              <th style={{width:"22%"}}>GPU</th>
+              <th style={{width:"18%"}}>{tokLabel} throughput</th>
+              <th style={{width:"14%"}}>Price · SAR/hr</th>
+              <th style={{width:"14%"}}>Tok per SAR</th>
+              <th style={{width:"16%"}}>Region · availability</th>
+              <th style={{width:"16%"}}>Best for</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={r.id} className={r.id===bestValue.id ? "best" : ""}>
+                <td>
+                  <div className="gpu-name">{r.name}</div>
+                  <div className="gpu-vram">{r.vram} GB VRAM</div>
+                </td>
+                <td>
+                  {r[tokKey]>0 ? (
+                    <>
+                      <div className="tok-cell">{r[tokKey]} <span className="u">tok/s</span></div>
+                      <div className="tok-bar"><div className="tok-bar-f" style={{width:(r[tokKey]/maxTok*100)+"%"}}/></div>
+                    </>
+                  ) : (
+                    <div style={{fontFamily:"var(--mono)", fontSize:11, color:"var(--mut)", letterSpacing:".05em"}}>INSUFFICIENT VRAM</div>
+                  )}
+                </td>
+                <td><div className="sar-cell">SAR {r.sar_hr}<span className="u"> /hr</span></div></td>
+                <td>
+                  {r[tokKey]>0 ? (
+                    <div style={{fontFamily:"var(--serif)", fontStyle:"italic", fontSize:20, color:"var(--teal)"}}>{(r[tokKey]/r.sar_hr).toFixed(1)}</div>
+                  ) : (
+                    <div style={{color:"var(--mut)"}}>—</div>
+                  )}
+                </td>
+                <td>
+                  <div style={{fontSize:12}}>{r.region}</div>
+                  <div className="avail-cell">{r.avail}</div>
+                </td>
+                <td>
+                  <span className={"best-tag " + (r.id===bestValue.id ? "w" : "")}>{r.best}</span>
+                  <div style={{marginTop:8}}>
+                    {r[tokKey]>0 ? <a href="./Browse Rigs.html" className="btn sm" style={{padding:"5px 10px"}}>Rent →</a> : null}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <div style={{background:"var(--paper)", border:"1px solid var(--hair)", padding:"18px 22px", fontSize:13, color:"var(--ink-2)", lineHeight:1.6}}>
+          <div className="gc-eb" style={{marginBottom:8}}>How we benchmark</div>
+          Throughput is measured from real user jobs: median tokens/sec over a 7-day rolling window, batch size 1, context 2048, fp16. Numbers refresh hourly. Your specific workload may differ — use the playground to test before committing to long runs.
+        </div>
+      </div>
+    </window.AppFrame>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<Compare />);
+</script>
+<script src="../assets/app-polish.js"></script>
+</body>
+</html>

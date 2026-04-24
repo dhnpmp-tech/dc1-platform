@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-palette="midnight">
+<head>
+<meta charset="utf-8">
+<title>Site Map — DCP</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/dcp-kit.css">
+<style>
+  html[data-palette="midnight"] body { background: var(--bg); }
+  body { margin:0; font-family:var(--sans); color:var(--ink); }
+
+  .doc { max-width: 1400px; margin: 0 auto; padding: 64px 48px 40px; border-bottom: 1px solid var(--hair); }
+  .doc .eb { font-family:var(--mono); font-size:11px; letter-spacing:.16em; color:var(--orange); text-transform:uppercase; }
+  .doc h1 { font-family:var(--serif); font-weight:400; font-size:88px; line-height:.98; margin:20px 0 14px; letter-spacing:-.015em; }
+  .doc h1 em { color:var(--orange); font-style:italic; }
+  .doc .lede { color:var(--ink-2); font-size:18px; line-height:1.55; max-width:72ch; margin:0 0 28px; }
+  .meta { display:grid; grid-template-columns: repeat(5, 1fr); gap:22px; padding-top:22px; border-top:1px dashed var(--hair); margin-top:28px; font-family:var(--mono); font-size:10.5px; letter-spacing:.12em; color:var(--mut); text-transform:uppercase; }
+  .meta b { color:var(--ink); font-weight:500; display:block; margin-top:6px; font-size:13.5px; letter-spacing:.02em; text-transform:none; font-family:var(--sans); }
+
+  .section { max-width: 1400px; margin: 0 auto; padding: 56px 48px; }
+  .section + .section { border-top: 1px solid var(--hair); }
+  .section-hd { display:grid; grid-template-columns: 120px 1fr auto; gap:28px; align-items:baseline; padding-bottom:16px; margin-bottom:28px; border-bottom:1px solid var(--ink); }
+  .section-hd .num { font-family:var(--serif); font-style:italic; font-size:64px; line-height:.9; color:var(--orange); letter-spacing:-.02em; }
+  .section-hd h2 { font-family:var(--serif); font-weight:400; font-size:38px; margin:0; letter-spacing:-.005em; }
+  .section-hd h2 em { color:var(--orange); font-style:italic; }
+  .section-hd .sub { font-family:var(--mono); font-size:10.5px; color:var(--mut); letter-spacing:.12em; text-transform:uppercase; margin-top:6px; max-width: 64ch; }
+  .section-hd .count { font-family:var(--mono); font-size:11px; color:var(--ink); letter-spacing:.1em; text-transform:uppercase; padding:10px 14px; border:1px solid var(--ink); white-space: nowrap; }
+
+  .surfaces { display:grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  @media (max-width: 1200px) { .surfaces { grid-template-columns: 1fr; } }
+
+  .surface { background: var(--paper); border: 1px solid var(--hair); display: flex; flex-direction: column; position: relative; overflow: hidden; }
+  .surface-hd { padding: 22px 22px 18px; border-bottom: 1px solid var(--hair); display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: start; }
+  .surface-mark { width: 44px; height: 44px; border-radius: 8px; display: grid; place-items: center; font-family: var(--serif); font-size: 24px; font-style: italic; color: var(--accent-ink); }
+  .surface.r .surface-mark { background: var(--teal); }
+  .surface.p .surface-mark { background: var(--orange); color: #fff; }
+  .surface.a .surface-mark { background: var(--ink); color: var(--bg); }
+  .surface-title { font-family: var(--serif); font-size: 26px; line-height: 1.1; margin: 4px 0 2px; }
+  .surface-sub { font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; color: var(--mut); text-transform: uppercase; }
+  .surface-count { font-family: var(--mono); font-size: 11px; color: var(--ink); border: 1px solid var(--hair); padding: 6px 10px; letter-spacing: .06em; white-space: nowrap; }
+  .surface-desc { padding: 14px 22px 18px; color: var(--ink-2); font-size: 13.5px; line-height: 1.55; border-bottom: 1px solid var(--hair); }
+  .surface-desc code { font-family: var(--mono); font-size: 12px; color: var(--ink); }
+
+  .route-group { padding: 12px 22px 18px; border-bottom: 1px solid var(--hair); }
+  .route-group:last-child { border-bottom: 0; }
+  .route-group-title { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; color: var(--mut); text-transform: uppercase; padding: 8px 0 10px; display: flex; justify-content: space-between; align-items: baseline; }
+  .route-group-title span.ct { color: var(--ink); font-weight: 500; }
+
+  .route { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: start; padding: 10px 0; border-top: 1px dashed var(--hair); }
+  .route:first-of-type { border-top: 0; }
+  .route .path { font-family: var(--mono); font-size: 13px; color: var(--ink); letter-spacing: -.01em; }
+  .route .desc { font-family: var(--sans); font-size: 12px; color: var(--mut); margin-top: 3px; line-height: 1.45; }
+  .route .stat { font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; padding: 3px 7px; border: 1px solid var(--hair); white-space: nowrap; align-self: start; }
+  .stat.built { border-color: var(--teal); color: var(--teal); }
+  .stat.next  { border-color: var(--orange); color: var(--orange); }
+  .stat.todo  { border-color: var(--dim); color: var(--mut); }
+
+  .flag { margin: 8px 0 4px; padding: 14px; background: var(--bg-2); border-left: 2px solid var(--orange); display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start; }
+  .flag .k { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; color: var(--orange); text-transform: uppercase; }
+  .flag .t { font-family: var(--serif); font-style: italic; font-size: 17px; margin-top: 2px; }
+  .flag .d { font-size: 12px; color: var(--ink-2); margin-top: 4px; line-height: 1.5; }
+
+  .dedupe { display: grid; grid-template-columns: 1fr; gap: 0; border: 1px solid var(--hair); background: var(--paper); }
+  .dedupe-row { display: grid; grid-template-columns: 40px 1.2fr 40px 1fr 1.4fr; gap: 14px; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--hair); }
+  .dedupe-row:last-child { border-bottom: 0; }
+  .dedupe-row .n { font-family: var(--serif); font-style: italic; font-size: 22px; color: var(--orange); }
+  .dedupe-row .from { font-family: var(--mono); font-size: 12px; line-height: 1.6; color: var(--ink); }
+  .dedupe-row .from .sep { color: var(--dim); }
+  .dedupe-row .arr { font-family: var(--mono); font-size: 22px; color: var(--orange); text-align: center; }
+  .dedupe-row .to { font-family: var(--mono); font-size: 13px; color: var(--teal); line-height: 1.45; }
+  .dedupe-row .why { font-size: 12px; color: var(--ink-2); line-height: 1.5; }
+  .dedupe-row code { font-family: var(--mono); font-size: 12px; color: var(--ink); }
+
+  .coverage { display: grid; grid-template-columns: 1.2fr 1fr 1fr 1fr; gap: 0; border: 1px solid var(--hair); background: var(--paper); }
+  .cov-h { padding: 14px 18px; font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--mut); border-bottom: 1px solid var(--ink); }
+  .cov-c { padding: 18px; border-top: 1px solid var(--hair); }
+  .cov-label { font-family: var(--serif); font-size: 22px; line-height: 1; margin-bottom: 6px; }
+  .cov-sub { font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; color: var(--mut); text-transform: uppercase; line-height: 1.55; }
+  .cov-bar { height: 6px; background: var(--bg-2); position: relative; margin: 10px 0 10px; border: 1px solid var(--hair); }
+  .cov-bar > span { position: absolute; inset: 0 auto 0 0; background: var(--teal); }
+  .cov-bar.orange > span { background: var(--orange); }
+  .cov-bar.dim > span { background: var(--dim); }
+  .cov-num { font-family: var(--mono); font-size: 11px; color: var(--ink); letter-spacing: .08em; }
+
+  .sequence { display: grid; grid-template-columns: repeat(7, 1fr); gap: 14px; }
+  @media (max-width: 1100px) { .sequence { grid-template-columns: repeat(2, 1fr); } }
+  .seq { padding: 18px; border: 1px solid var(--hair); background: var(--paper); display: flex; flex-direction: column; gap: 8px; }
+  .seq.active { border-color: var(--orange); }
+  .seq.done { opacity: 0.7; }
+  .seq .n { font-family: var(--serif); font-style: italic; font-size: 36px; color: var(--orange); line-height: .9; }
+  .seq .t { font-family: var(--serif); font-size: 18px; line-height: 1.15; }
+  .seq .d { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; color: var(--mut); text-transform: uppercase; }
+  .seq .w { font-size: 11.5px; color: var(--ink-2); line-height: 1.5; margin-top: 2px; }
+  .seq-tag { font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase; padding: 3px 7px; border: 1px solid currentColor; align-self: flex-start; }
+  .seq.done .seq-tag { color: var(--teal); }
+  .seq.active .seq-tag { color: var(--orange); }
+  .seq.todo .seq-tag { color: var(--mut); }
+
+  .legend { display: flex; gap: 22px; flex-wrap: wrap; padding: 16px 0 0; font-family: var(--mono); font-size: 11px; letter-spacing: .08em; color: var(--mut); text-transform: uppercase; }
+  .legend .l { display: flex; align-items: center; gap: 8px; }
+  .legend .sw { width: 16px; height: 4px; background: var(--teal); }
+  .legend .sw.orange { background: var(--orange); }
+  .legend .sw.dim { background: var(--dim); }
+
+  footer.foot { max-width: 1400px; margin: 0 auto; padding: 40px 48px 72px; border-top: 1px solid var(--hair); }
+  .foot .line { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 20px; font-family: var(--mono); font-size: 11px; letter-spacing: .1em; color: var(--mut); text-transform: uppercase; }
+  .foot .line b { color: var(--ink); font-weight: 500; }
+
+  .sub-hd { display: grid; grid-template-columns: 40px 1fr; gap: 14px; align-items: baseline; margin: 36px 0 18px; }
+  .sub-hd .nn { font-family: var(--serif); font-style: italic; font-size: 26px; color: var(--orange); }
+  .sub-hd h3 { font-family: var(--serif); font-weight: 400; font-size: 26px; margin: 0; }
+  .sub-hd h3 em { color: var(--orange); font-style: italic; }
+  .sub-hd .s { font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; color: var(--mut); text-transform: uppercase; margin-top: 4px; display: block; }
+
+  @media (max-width: 700px) {
+    .doc { padding: 40px 22px 28px; } .doc h1 { font-size: 54px; }
+    .section { padding: 40px 22px; }
+    .section-hd { grid-template-columns: 60px 1fr; }
+    .section-hd .count { grid-column: 1 / -1; }
+    .meta { grid-template-columns: 1fr 1fr; }
+    .dedupe-row { grid-template-columns: 1fr; gap: 4px; }
+    .dedupe-row .arr { text-align: start; }
+    .coverage { grid-template-columns: 1fr 1fr; }
+    footer.foot { padding: 28px 22px 54px; }
+  }
+</style>
+</head>
+<body>
+
+<section class="doc">
+  <div class="eb">DCP · Information Architecture · v1 · 2026-04-23</div>
+  <h1>Three surfaces,<br><em>one platform.</em></h1>
+  <p class="lede">
+    The DCP codebase ships 57 UI routes split across three distinct products sharing one brand, one kit, and one backend.
+    This map locates every route, marks what&rsquo;s designed, flags legacy paths that should collapse, and sequences the work still to do.
+  </p>
+  <div class="meta">
+    <div>Source <b>dc1-platform / peter&#8209;repo&#8209;hygiene</b></div>
+    <div>Total routes <b>57 UI · 40+ API</b></div>
+    <div>Surfaces <b>Renter · Provider · Admin</b></div>
+    <div>Designed <b>18 screens</b></div>
+    <div>Remaining <b>32 + RTL + deck</b></div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-hd">
+    <div class="num">I.</div>
+    <div>
+      <h2>The three <em>canonical</em> surfaces.</h2>
+      <div class="sub">Every UI route in the platform belongs to exactly one of these. Everything else is legacy.</div>
+    </div>
+    <div class="count">57 routes · 3 surfaces</div>
+  </div>
+
+  <div class="legend">
+    <div class="l"><span class="sw"></span>Designed</div>
+    <div class="l"><span class="sw orange"></span>Next up</div>
+    <div class="l"><span class="sw dim"></span>Not yet designed</div>
+  </div>
+
+  <br><br>
+
+  <div class="surfaces">
+
+    <article class="surface r">
+      <div class="surface-hd">
+        <div class="surface-mark">R</div>
+        <div><div class="surface-sub">Customer · rents compute</div><div class="surface-title">Renter</div></div>
+        <div class="surface-count">16 routes</div>
+      </div>
+      <div class="surface-desc">Developers and teams consuming GPU compute: submit jobs, monitor runs, manage keys, pay in SAR or USDC. Most designed work so far targets this surface.</div>
+
+      <div class="route-group">
+        <div class="route-group-title">Onboarding <span class="ct">2</span></div>
+        <div class="route"><div><div class="path">/renter</div><div class="desc">Role landing &mdash; what DCP does for renters.</div></div><div class="stat todo">todo</div></div>
+        <div class="route"><div><div class="path">/renter/register</div><div class="desc">Signup (public, no session).</div></div><div class="stat built">done</div></div>
+      </div>
+
+      <div class="route-group">
+        <div class="route-group-title">Discovery <span class="ct">5</span></div>
+        <div class="route"><div><div class="path">/renter/marketplace</div><div class="desc">Live GPU marketplace &mdash; filter, compare, pick.</div></div><div class="stat built">done</div></div>
+        <div class="route"><div><div class="path">/renter/marketplace/providers/[id]</div><div class="desc">Provider detail &mdash; specs, history, rate.</div></div><div class="stat todo">todo</div></div>
+        <div class="route"><div><div class="path">/renter/marketplace/templates</div><div class="desc">Pre-wired Docker templates.</div></div><div class="stat todo">todo</div></div>
+        <div class="route"><div><div class="path">/renter/models</div><div class="desc">Model catalog &mdash; ALLaM, JAIS, Falcon&hellip;</div></div><div class="stat built">done</div></div>
+        <div class="route"><div><div class="path">/renter/templates</div><div class="desc">User&rsquo;s saved templates.</div></div><div class="stat todo">todo</div></div>
+      </div>
+
+      <div class="route-group">
+        <div class="route-group-title">Work <span class="ct">4</span></div>
+        <div class="route"><div><div class="path">/renter/playground</div><div class="desc">Interactive prompt &mdash; streaming tokens.</div></div><div class="stat built">done</div></div>
+        <div class="route"><div><div class="path">/renter/jobs</div><div class="desc">Batch &amp; long-running job list.</div></div><div class="stat built">done</div></div>
+        <div class="route"><div><div class="path">/renter/jobs/[id]</div><div class="desc">Single job drilldown &mdash; logs, metrics, artifacts.</div></div><div class="stat built">done</div></div>
+        <div class="route"><div><div class="path">/renter/live</div><div class="desc">Live monitor &mdash; SSE token stream + cost meter.</div></div><div class="stat next">next</div></div>
+      </div>
+
+      <div class="route-group">
+        <div class="route-group-title">Money <span class="ct">4</span></div>
+        <div class="route"><div><div class="path">/renter/billing</div><div class="desc">Wallet, top-ups, invoices, USDC escrow.</div></div><div class="stat built">partial</div></div>
+        <div class="route"><div><div class="path">/renter/billing/confirm</div><div class="desc">Moyasar return &mdash; success/failure.</div></div><div class="stat todo">todo</div></div>
+        <div class="route"><div><div class="path">/renter/pricing</div><div class="desc">Public pricing reference.</div></div><div class="stat built">done</div></div>
+        <div class="route"><div><div class="path">/renter/cost-dashboard</div><div class="desc">Spend analytics by model, project, region.</div></div><div class="stat next">next</div></div>
+      </div>
+
+      <div class="route-group">
+        <div class="route-group-title">Insight + settings <span class="ct">3</span></div>
+        <div class="route"><div><div class="path">/renter/analytics</div><div class="desc">Usage analytics &mdash; tokens, latency, errors.</div></div><div class="stat built">done</div></div>
+        <div class="route"><div><div class="path">/renter/gpu-comparison</div><div class="desc">DCP vs. RunPod, Vast, Bedrock.</div></div><div class="stat next">next</div></div>
+        <div class="route"><div><div class="path">/renter/settings</div><div class="desc">Profile, team, API keys, security.</div></div><div class="stat built">done</div></div>
+      </div>
+
+      <div class="route-group">
+        <div class="flag">
+          <div class="k">Gap</div>
+          <div>
+            <div class="t">Wallet doesn&rsquo;t show USDC yet.</div>
+            <div class="d">Current billing is SAR-only. Escrow, claim proofs, and on-chain settlement are part of the spec but not yet in the design. Priority fix in the Renter-gap batch.</div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="surface p">
+      <div class="surface-hd">
+        <div class="surface-mark">P</div>
+        <div><div class="surface-sub">Supplier · lists GPU</div><div class="surface-title">Provider</div></div>
+        <div class="surface-count">11 routes</div>
+      </div>
+      <div class="surface-desc">GPU owners listing capacity: register a rig, run the 4&nbsp;MB daemon, set rates, monitor health, withdraw earnings. Canonical onboarding is <code>/setup</code>&nbsp;&mdash; five legacy URLs 308 into it.</div>
+
+      <div class="route-group">
+        <div class="route-group-title">Acquisition <span class="ct">2</span></div>
+        <div class="route"><div><div class="path">/provider</div><div class="desc">Role landing &mdash; why rent your GPU to DCP.</div></div><div class="stat todo">todo</div></div>
+        <div class="route"><div><div class="path">/earn</div><div class="desc">Public recruitment landing (marketing).</div></div><div class="stat built">done</div></div>
+      </div>
+
+      <div class="route-group">
+        <div class="route-group-title">Onboarding (canonical) <span class="ct">3</span></div>
+        <div class="route"><div><div class="path">/setup</div><div class="desc">6-step wizard &mdash; all legacy paths 308 here.</div></div><div class="stat next">next</div></div>
+        <div class="route"><div><div class="path">/provider/download</div><div class="desc">Daemon installer pick &mdash; Win/macOS/Linux.</div></div><div class="stat todo">todo</div></div>
+        <div class="route"><div><div class="path">/provider/activate</div><div class="desc">Device pairing + first-heartbeat confirmation.</div></div><div class="stat todo">todo</div></div>
+      </div>
+
+      <div class="route-group">
+        <div class="route-group-title">Operate <span class="ct">4</span></div>
+        <div class="route"><div><div class="path">/provider/dashboard</div><div class="desc">Rig health, temp, utilization, live earnings.</div></div><div class="stat todo">todo</div></div>
+        <div class="route"><div><div class="path">/provider/gpu</div><div class="desc">Hardware config &mdash; model, VRAM, power.</div></div><div class="stat todo">todo</div></div>
+        <div class="route"><div><div class="path">/provider/fleet</div><div class="desc">Multi-node view for operators running &gt;&nbsp;1 rig.</div></div><div class="stat todo">todo</div></div>
+        <div class="route"><div><div class="path">/provider/jobs + [id]</div><div class="desc">Jobs served by this provider.</div></div><div class="stat todo">todo</div></div>
+      </div>
+
+      <div class="route-group">
+        <div class="route-group-title">Money + settings <span class="ct">2</span></div>
+        <div class="route"><div><div class="path">/provider/earnings</div><div class="desc">SAR &amp; USDC balance, payouts, tier.</div></div><div class="stat todo">todo</div></div>
+        <div class="route"><div><div class="path">/provider/settings</div><div class="desc">Account, payout bank, withdrawal prefs.</div></div><div class="stat todo">todo</div></div>
+      </div>
+
+      <div class="route-group">
+        <div class="flag">
+          <div class="k">Anchor</div>
+          <div>
+            <div class="t">Build /setup first, use it to drive the shell.</div>
+            <div class="d">/setup is the highest-leverage single surface &mdash; every new provider meets the product there. Build it, extract the provider shell from it, reuse for the other 9 screens.</div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="surface a">
+      <div class="surface-hd">
+        <div class="surface-mark">A</div>
+        <div><div class="surface-sub">DCP team · runs the market</div><div class="surface-title">Admin</div></div>
+        <div class="surface-count">12 routes</div>
+      </div>
+      <div class="surface-desc">DCP-internal operations: marketplace health, customer &amp; provider support, finance, security. The most complex surface &mdash; and home of the flagship &ldquo;living&rdquo; fleet map.</div>
+
+      <div class="route-group">
+        <div class="route-group-title">Overview <span class="ct">2</span></div>
+        <div class="route"><div><div class="path">/admin</div><div class="desc">Platform KPIs &mdash; GMV, fill rate, incidents, LTV.</div></div><div class="stat todo">todo</div></div>
+        <div class="route"><div><div class="path">/admin/metrics</div><div class="desc">Ops metrics deep-dive.</div></div><div class="stat todo">todo</div></div>
+      </div>
+
+      <div class="route-group">
+        <div class="route-group-title">People <span class="ct">4</span></div>
+        <div class="route"><div><div class="path">/admin/providers + [id]</div><div class="desc">All providers &mdash; health, tier, flags; single rig + disputes.</div></div><div class="stat todo">todo</div></div>
+        <div class="route"><div><div class="path">/admin/renters + [id]</div><div class="desc">All renters &mdash; spend, jobs, risk; single wallet + audit.</div></div><div class="stat todo">todo</div></div>
+      </div>
+
+      <div class="route-group">
+        <div class="route-group-title">Fleet &amp; jobs <span class="ct">3</span></div>
+        <div class="route"><div><div class="path">/admin/fleet</div><div class="desc"><b style="color:var(--orange)">Flagship.</b> Live regional capacity + demand map.</div></div><div class="stat next">flagship</div></div>
+        <div class="route"><div><div class="path">/admin/jobs + [id]</div><div class="desc">All jobs &mdash; filter, retry, force-complete.</div></div><div class="stat todo">todo</div></div>
+        <div class="route"><div><div class="path">/admin/containers</div><div class="desc">Approved container specs + image registry.</div></div><div class="stat todo">todo</div></div>
+      </div>
+
+      <div class="route-group">
+        <div class="route-group-title">Money <span class="ct">3</span></div>
+        <div class="route"><div><div class="path">/admin/finance</div><div class="desc">Wallet balances, reconciliation, SAMA reports.</div></div><div class="stat todo">todo</div></div>
+        <div class="route"><div><div class="path">/admin/revenue</div><div class="desc">GMV, take rate, cohort revenue.</div></div><div class="stat todo">todo</div></div>
+        <div class="route"><div><div class="path">/admin/withdrawals</div><div class="desc">Review queue &mdash; approve/hold/deny.</div></div><div class="stat todo">todo</div></div>
+      </div>
+
+      <div class="route-group">
+        <div class="route-group-title">Controls <span class="ct">2</span></div>
+        <div class="route"><div><div class="path">/admin/security</div><div class="desc">Auth events, anomaly flags, kill-switches.</div></div><div class="stat todo">todo</div></div>
+        <div class="route"><div><div class="path">/admin/settings</div><div class="desc">Platform config &mdash; fees, tiers, policies.</div></div><div class="stat todo">todo</div></div>
+      </div>
+
+      <div class="route-group">
+        <div class="flag">
+          <div class="k">Flagship</div>
+          <div>
+            <div class="t">/admin/fleet &mdash; the living screen.</div>
+            <div class="d">Riyadh / Jeddah / Dammam capacity, active jobs moving between rigs, demand pressure, incident markers. The single DCP screen worth a keynote demo. Reuses the public hero&rsquo;s Saudi-mesh animation at operational fidelity.</div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-hd">
+    <div class="num">II.</div>
+    <div>
+      <h2>Public, auth, <em>and docs.</em></h2>
+      <div class="sub">Not part of the three signed-in surfaces, but scaffolds the whole experience.</div>
+    </div>
+    <div class="count">16 routes</div>
+  </div>
+
+  <div class="surfaces">
+
+    <article class="surface">
+      <div class="surface-hd">
+        <div class="surface-mark" style="background:var(--ink-2);color:var(--bg);">·</div>
+        <div><div class="surface-sub">Marketing &amp; transparency</div><div class="surface-title">Public</div></div>
+        <div class="surface-count">7 routes</div>
+      </div>
+      <div class="route-group">
+        <div class="route"><div><div class="path">/</div><div class="desc">Landing &mdash; the PDF&rsquo;s source.</div></div><div class="stat built">done</div></div>
+        <div class="route"><div><div class="path">/solutions/arabic-rag</div><div class="desc">Arabic RAG solution page.</div></div><div class="stat todo">todo</div></div>
+        <div class="route"><div><div class="path">/status</div><div class="desc">Public status + incidents.</div></div><div class="stat built">done</div></div>
+        <div class="route"><div><div class="path">/trust-center</div><div class="desc">PDPL, SOC2, sub-processors.</div></div><div class="stat todo">todo</div></div>
+        <div class="route"><div><div class="path">/support</div><div class="desc">Support entry.</div></div><div class="stat built">done</div></div>
+        <div class="route"><div><div class="path">/earn</div><div class="desc">Provider recruitment landing.</div></div><div class="stat built">done</div></div>
+        <div class="route"><div><div class="path">/legal/{privacy,terms,au,pdpl}</div><div class="desc">Legal corpus.</div></div><div class="stat todo">todo</div></div>
+      </div>
+    </article>
+
+    <article class="surface">
+      <div class="surface-hd">
+        <div class="surface-mark" style="background:var(--ink-2);color:var(--bg);">·</div>
+        <div><div class="surface-sub">Identity</div><div class="surface-title">Auth</div></div>
+        <div class="surface-count">2 routes</div>
+      </div>
+      <div class="surface-desc">Supabase OTP magic-link. Role lives in <code>__dc1_session</code> and middleware gates all three role surfaces.</div>
+      <div class="route-group">
+        <div class="route"><div><div class="path">/login</div><div class="desc">Email + OTP magic link.</div></div><div class="stat built">done</div></div>
+        <div class="route"><div><div class="path">/auth/callback</div><div class="desc">OAuth / magic-link return.</div></div><div class="stat todo">todo</div></div>
+      </div>
+    </article>
+
+    <article class="surface">
+      <div class="surface-hd">
+        <div class="surface-mark" style="background:var(--ink-2);color:var(--bg);">·</div>
+        <div><div class="surface-sub">Reference</div><div class="surface-title">Docs</div></div>
+        <div class="surface-count">7 routes</div>
+      </div>
+      <div class="surface-desc">MDX catch-all. Two variations already in <code>/docs</code>. EN/AR split across files today; should unify under <code>/ar/docs</code>.</div>
+      <div class="route-group">
+        <div class="route"><div><div class="path">/docs/[[&hellip;slug]]</div><div class="desc">MDX catch-all.</div></div><div class="stat built">done</div></div>
+        <div class="route"><div><div class="path">/docs/quickstart</div><div class="desc">60-second API quickstart.</div></div><div class="stat built">done</div></div>
+        <div class="route"><div><div class="path">/docs/api</div><div class="desc">REST reference.</div></div><div class="stat built">done</div></div>
+        <div class="route"><div><div class="path">/docs/models</div><div class="desc">Model capabilities table.</div></div><div class="stat built">done</div></div>
+        <div class="route"><div><div class="path">/docs/provider-guide</div><div class="desc">Daemon install, auth, heartbeats.</div></div><div class="stat built">done</div></div>
+        <div class="route"><div><div class="path">/docs/renter-guide</div><div class="desc">Job submission, SDK, pricing.</div></div><div class="stat built">done</div></div>
+        <div class="route"><div><div class="path">/docs/brand</div><div class="desc">Brand + kit reference.</div></div><div class="stat built">done</div></div>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-hd">
+    <div class="num">III.</div>
+    <div>
+      <h2>Legacy routes to <em>collapse.</em></h2>
+      <div class="sub">14 pages predate the role split. Every one of them already has a role-scoped home. Redirect, dedupe, delete.</div>
+    </div>
+    <div class="count">14 → 0</div>
+  </div>
+
+  <div class="dedupe">
+
+    <div class="dedupe-row">
+      <div class="n">01</div>
+      <div class="from">/solutions/arabic-rag<br><span class="sep">·</span> /arabic-rag<br><span class="sep">·</span> /ar/solutions/arabic-rag</div>
+      <div class="arr">&rarr;</div>
+      <div class="to">/solutions/arabic-rag<br>+ /ar/solutions/arabic-rag</div>
+      <div class="why">One concept, three URLs. Keep the namespaced pair (EN + AR locale). 308 <code>/arabic-rag</code> to the canonical.</div>
+    </div>
+
+    <div class="dedupe-row">
+      <div class="n">02</div>
+      <div class="from">/privacy<br><span class="sep">·</span> /legal/privacy</div>
+      <div class="arr">&rarr;</div>
+      <div class="to">/legal/privacy</div>
+      <div class="why">Namespace legal. Nothing at root. Apply the same rule to /terms and /acceptable-use.</div>
+    </div>
+
+    <div class="dedupe-row">
+      <div class="n">03</div>
+      <div class="from">/dashboard<br><span class="sep">·</span> /dashboard/jobs<br><span class="sep">·</span> /dashboard/jobs/[jobId]</div>
+      <div class="arr">&rarr;</div>
+      <div class="to">/renter/&hellip; or /provider/&hellip;<br>(by session role)</div>
+      <div class="why">Pre-role-split generic dashboard. Middleware resolves role cookie and 302s into the correct surface. Delete the routes.</div>
+    </div>
+
+    <div class="dedupe-row">
+      <div class="n">04</div>
+      <div class="from">/jobs<br><span class="sep">·</span> /jobs/submit<br><span class="sep">·</span> /jobs/[id]/monitor</div>
+      <div class="arr">&rarr;</div>
+      <div class="to">/renter/jobs/*</div>
+      <div class="why">Jobs belong to renters. Providers see them under /provider/jobs, admin under /admin/jobs. No un-prefixed surface needed.</div>
+    </div>
+
+    <div class="dedupe-row">
+      <div class="n">05</div>
+      <div class="from">/marketplace<br><span class="sep">·</span> /marketplace/models<br><span class="sep">·</span> /marketplace/templates</div>
+      <div class="arr">&rarr;</div>
+      <div class="to">/renter/marketplace/*</div>
+      <div class="why">Marketplace is the renter&rsquo;s discovery surface. Providers don&rsquo;t &ldquo;shop&rdquo;.</div>
+    </div>
+
+    <div class="dedupe-row">
+      <div class="n">06</div>
+      <div class="from">/onboarding</div>
+      <div class="arr">&rarr;</div>
+      <div class="to">/setup (provider)<br>/renter/register (renter)</div>
+      <div class="why">Ambiguous. /setup is canonical provider onboarding; renter signup goes through /renter/register.</div>
+    </div>
+
+    <div class="dedupe-row">
+      <div class="n">07</div>
+      <div class="from">/monitor</div>
+      <div class="arr">&rarr;</div>
+      <div class="to">/renter/live<br>or /provider/dashboard</div>
+      <div class="why">Same live-view concept, owned per role.</div>
+    </div>
+
+    <div class="dedupe-row">
+      <div class="n">08</div>
+      <div class="from">/api-keys<br><span class="sep">·</span> /tokens<br><span class="sep">·</span> /security<br><span class="sep">·</span> /connections<br><span class="sep">·</span> /budget</div>
+      <div class="arr">&rarr;</div>
+      <div class="to">/renter/settings<br>(tabbed)</div>
+      <div class="why">Five orphan settings pages. Fold into /renter/settings with tabs. /agents and /intelligence need a product decision before design.</div>
+    </div>
+
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-hd">
+    <div class="num">IV.</div>
+    <div>
+      <h2>Coverage <em>by surface.</em></h2>
+      <div class="sub">What&rsquo;s designed in this project vs. what the codebase expects. Ground truth for sequencing.</div>
+    </div>
+    <div class="count">41 / 57 remaining</div>
+  </div>
+
+  <div class="coverage">
+    <div class="cov-h">Surface</div>
+    <div class="cov-h">Designed</div>
+    <div class="cov-h">Next up</div>
+    <div class="cov-h">To do</div>
+
+    <div class="cov-c"><div class="cov-label">Renter</div><div class="cov-sub">16 routes</div><div class="cov-bar"><span style="width:62%"></span></div><div class="cov-num">10 of 16 · 62%</div></div>
+    <div class="cov-c"><div class="cov-label" style="color:var(--teal)">10</div><div class="cov-sub">Marketplace, models, playground, jobs, analytics, settings, billing, pricing.</div></div>
+    <div class="cov-c"><div class="cov-label" style="color:var(--orange)">3</div><div class="cov-sub">/live · /cost-dashboard · /gpu-comparison</div></div>
+    <div class="cov-c"><div class="cov-label" style="color:var(--mut)">3</div><div class="cov-sub">/renter · provider detail · templates</div></div>
+
+    <div class="cov-c"><div class="cov-label">Provider</div><div class="cov-sub">11 routes</div><div class="cov-bar orange"><span style="width:0%"></span></div><div class="cov-num">0 of 11 · 0%</div></div>
+    <div class="cov-c"><div class="cov-label" style="color:var(--teal)">0</div><div class="cov-sub">Nothing yet.</div></div>
+    <div class="cov-c"><div class="cov-label" style="color:var(--orange)">1</div><div class="cov-sub">/setup &mdash; the onboarding anchor.</div></div>
+    <div class="cov-c"><div class="cov-label" style="color:var(--mut)">10</div><div class="cov-sub">Dashboard, earnings, gpu, fleet, jobs, download, settings.</div></div>
+
+    <div class="cov-c"><div class="cov-label">Admin</div><div class="cov-sub">12 routes</div><div class="cov-bar dim"><span style="width:0%"></span></div><div class="cov-num">0 of 12 · 0%</div></div>
+    <div class="cov-c"><div class="cov-label" style="color:var(--teal)">0</div><div class="cov-sub">Nothing yet.</div></div>
+    <div class="cov-c"><div class="cov-label" style="color:var(--orange)">1</div><div class="cov-sub">/admin/fleet &mdash; flagship living screen.</div></div>
+    <div class="cov-c"><div class="cov-label" style="color:var(--mut)">11</div><div class="cov-sub">Metrics, people, money, controls.</div></div>
+
+    <div class="cov-c"><div class="cov-label">Public + Docs</div><div class="cov-sub">16 routes</div><div class="cov-bar"><span style="width:75%"></span></div><div class="cov-num">12 of 16 · 75%</div></div>
+    <div class="cov-c"><div class="cov-label" style="color:var(--teal)">12</div><div class="cov-sub">Landing, status, earn, docs, pricing, support, login.</div></div>
+    <div class="cov-c"><div class="cov-label" style="color:var(--orange)">0</div><div class="cov-sub">&mdash;</div></div>
+    <div class="cov-c"><div class="cov-label" style="color:var(--mut)">4</div><div class="cov-sub">Trust center, arabic-rag, legal, auth callback.</div></div>
+
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-hd">
+    <div class="num">V.</div>
+    <div>
+      <h2>The build <em>sequence.</em></h2>
+      <div class="sub">Seven passes. Each pass is shippable on its own. Pass 1 unblocks most of Pass 2 by establishing the provider shell.</div>
+    </div>
+    <div class="count">7 passes</div>
+  </div>
+
+  <div class="sequence">
+
+    <div class="seq done">
+      <div class="seq-tag">Pass 0 · done</div>
+      <div class="n">0</div><div class="t">Site map.</div>
+      <div class="d">This document</div>
+      <div class="w">Ground truth before we touch another pixel.</div>
+    </div>
+
+    <div class="seq active">
+      <div class="seq-tag">Pass 1 · now</div>
+      <div class="n">1</div><div class="t">/setup.</div>
+      <div class="d">6-step provider onboarding</div>
+      <div class="w">Canonical. Highest leverage screen you haven&rsquo;t seen yet.</div>
+    </div>
+
+    <div class="seq todo">
+      <div class="seq-tag">Pass 2</div>
+      <div class="n">2</div><div class="t">Provider shell.</div>
+      <div class="d">9 screens</div>
+      <div class="w">Landing, dashboard, earnings, gpu, fleet, jobs, jobs/[id], download, settings.</div>
+    </div>
+
+    <div class="seq todo">
+      <div class="seq-tag">Pass 3</div>
+      <div class="n">3</div><div class="t">Admin.</div>
+      <div class="d">12 screens + flagship</div>
+      <div class="w">Overview, people, fleet map, jobs, finance, revenue, withdrawals, security, settings.</div>
+    </div>
+
+    <div class="seq todo">
+      <div class="seq-tag">Pass 4</div>
+      <div class="n">4</div><div class="t">Renter gaps.</div>
+      <div class="d">6 screens</div>
+      <div class="w">Live monitor, USDC wallet, cost dashboard, gpu comparison, provider detail, templates.</div>
+    </div>
+
+    <div class="seq todo">
+      <div class="seq-tag">Pass 5</div>
+      <div class="n">5</div><div class="t">RTL.</div>
+      <div class="d">All three surfaces</div>
+      <div class="w">Full mirror. Arabic numerals in charts. Bilingual claim becomes real.</div>
+    </div>
+
+    <div class="seq todo">
+      <div class="seq-tag">Pass 6</div>
+      <div class="n">6</div><div class="t">Deck.</div>
+      <div class="d">~12 slides</div>
+      <div class="w">Problem · sovereignty · marketplace · product tour · traction · ask.</div>
+    </div>
+
+  </div>
+
+  <div class="sub-hd">
+    <div class="nn">§</div>
+    <div>
+      <h3>Distinct <em>shells</em>, shared kit.</h3>
+      <span class="s">Recommended per-surface chrome treatment</span>
+    </div>
+  </div>
+
+  <div class="surfaces">
+    <article class="surface r">
+      <div class="surface-hd">
+        <div class="surface-mark">R</div>
+        <div><div class="surface-sub">Renter</div><div class="surface-title">Teal accent · build surface</div></div>
+      </div>
+      <div class="surface-desc">Current app shell stays. Teal accent on CTAs, streaming data, playground. Primary feel: developer tool.</div>
+    </article>
+
+    <article class="surface p">
+      <div class="surface-hd">
+        <div class="surface-mark">P</div>
+        <div><div class="surface-sub">Provider</div><div class="surface-title">Orange accent · earnings-forward</div></div>
+      </div>
+      <div class="surface-desc">Earnings-number hero in every view. Warm orange accent on payout &amp; rig-status primitives. Primary feel: side-hustle dashboard.</div>
+    </article>
+
+    <article class="surface a">
+      <div class="surface-hd">
+        <div class="surface-mark">A</div>
+        <div><div class="surface-sub">Admin</div><div class="surface-title">Monochrome · denser · severe</div></div>
+      </div>
+      <div class="surface-desc">Type drops 1&ndash;2&nbsp;px across the board. Heavier rules. Red reserved strictly for critical states. Primary feel: NOC / ops room.</div>
+    </article>
+  </div>
+
+</section>
+
+<footer class="foot">
+  <div class="line">
+    <div><b>DCP · Site Map v1</b> &mdash; dc1-platform @ peter/repo-hygiene</div>
+    <div>57 UI routes · 3 surfaces · 14 legacy collapses</div>
+    <div>Next: <b style="color:var(--orange)">/setup</b></div>
+  </div>
+</footer>
+
+</body>
+</html>

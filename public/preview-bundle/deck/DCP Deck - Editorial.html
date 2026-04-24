@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>DCP · Seed · Editorial</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+<style>
+:root {
+  --bg:#0a0b1a; --bg2:#10122a; --paper:#161834;
+  --ink:#f5f3ee; --ink2:#c9c5bd;
+  --mut:#7b7a92; --dim:#4e4d67;
+  --hair:#1f2040; --hair2:#272848;
+  --teal:#2dd4b6; --orange:#ee7a3c;
+  --accent: var(--teal);
+  --accent2: var(--orange);
+  --red:#ef4062; --green:#2dd4b6;
+  --serif: "Instrument Serif", serif;
+  --sans: "Inter", sans-serif;
+  --mono: "JetBrains Mono", monospace;
+}
+* { box-sizing: border-box; }
+body, html { margin: 0; padding: 0; background: #000; font-family: var(--sans); }
+deck-stage { background: #000; }
+
+section {
+  width: 1920px; height: 1080px;
+  background: var(--bg); color: var(--ink);
+  position: relative; overflow: hidden;
+  padding: 96px 120px;
+  display: flex; flex-direction: column;
+}
+section.paper { background: #faf6ed; color: #0a0b1a; }
+section.paper .eb { color: #d85f22; }
+section.paper .mut { color: #645d7a; }
+section.paper h1 em, section.paper h2 em, section.paper h3 em, section.paper .pull em { color: #d85f22; }
+section.paper .mani em { color: #0d9d87; }
+section.paper hr { border-color: #d8cfbe; }
+
+/* chrome */
+.chrome { position: absolute; inset: 40px 60px auto 60px; display: flex; justify-content: space-between; align-items: flex-start; font-family: var(--mono); font-size: 24px; letter-spacing: .16em; color: var(--mut); text-transform: uppercase; white-space: nowrap; }
+.chrome .l { color: var(--accent); }
+.footer { position: absolute; inset: auto 60px 32px 60px; display: flex; justify-content: space-between; font-family: var(--mono); font-size: 24px; color: var(--mut); letter-spacing: .10em; text-transform: uppercase; white-space: nowrap; }
+
+/* type */
+.eb { font-family: var(--mono); font-size: 26px; letter-spacing: .22em; text-transform: uppercase; color: var(--accent); margin-bottom: 28px; }
+h1 { font-family: var(--serif); font-weight: 400; font-size: 156px; line-height: .98; letter-spacing: -.02em; margin: 0; }
+h1 em { font-style: italic; color: var(--orange); }
+h2 { font-family: var(--serif); font-weight: 400; font-size: 128px; line-height: .98; letter-spacing: -.015em; margin: 0 0 40px; }
+h2 em { font-style: italic; color: var(--orange); }
+h3 { font-family: var(--serif); font-weight: 400; font-size: 80px; line-height: 1.02; letter-spacing: -.01em; margin: 0 0 32px; }
+h3 em { font-style: italic; color: var(--orange); }
+.lede { font-size: 32px; line-height: 1.45; color: var(--ink2); max-width: 1100px; font-weight: 300; }
+.kicker { font-family: var(--serif); font-style: italic; font-size: 38px; color: #9a98b0; line-height: 1.3; max-width: 1000px; margin-top: 20px; }
+.mono { font-family: var(--mono); }
+
+hr { border: 0; border-top: 1px solid var(--hair2); margin: 40px 0; }
+
+/* TOC at top */
+.toc { position: absolute; top: 80px; right: 120px; font-family: var(--mono); font-size: 14px; color: var(--mut); letter-spacing: .08em; text-align: end; line-height: 2; }
+
+/* generic two-col */
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 100px; flex: 1; }
+.three { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 64px; margin-top: 40px; }
+.spread { display: grid; grid-template-columns: 480px 1fr; gap: 100px; flex: 1; align-items: start; }
+
+/* cards */
+.card { border-top: 1px solid var(--hair); padding-top: 24px; }
+.card .n { font-family: var(--serif); font-style: italic; font-size: 108px; line-height: 1; color: var(--accent); margin-bottom: 12px; letter-spacing: -.02em; }
+.card .t { font-family: var(--serif); font-size: 38px; line-height: 1.15; margin-bottom: 14px; letter-spacing: -.005em; }
+.card .d { font-size: 24px; color: var(--ink2); line-height: 1.55; }
+
+/* pullquote */
+.pull { font-family: var(--serif); font-style: italic; font-size: 96px; line-height: 1.05; letter-spacing: -.015em; max-width: 1500px; }
+.pull em { color: var(--accent); }
+.attr { font-family: var(--mono); font-size: 24px; color: var(--mut); letter-spacing: .14em; text-transform: uppercase; margin-top: 40px; }
+
+/* big number */
+.big-n { font-family: var(--serif); font-style: italic; font-size: 340px; line-height: .9; color: var(--accent); letter-spacing: -.03em; }
+.big-l { font-family: var(--mono); font-size: 18px; color: var(--mut); letter-spacing: .18em; text-transform: uppercase; margin-top: 20px; }
+
+/* marquee-ish "why now" */
+.mani { font-family: var(--serif); font-size: 76px; line-height: 1.12; letter-spacing: -.015em; max-width: 1620px; }
+.mani em { font-style: italic; color: var(--accent); }
+.mani .gray { color: var(--mut); }
+
+/* map */
+.map { aspect-ratio: 1.2/1; width: 100%; }
+.map svg { width: 100%; height: 100%; }
+
+/* table */
+table.tbl { width: 100%; border-collapse: collapse; font-family: var(--mono); }
+table.tbl th, table.tbl td { padding: 14px 10px; text-align: start; border-bottom: 1px solid var(--hair); font-size: 24px; vertical-align: baseline; }
+table.tbl th { font-size: 18px; letter-spacing: .14em; text-transform: uppercase; color: var(--mut); font-weight: 400; }
+table.tbl td.n { text-align: end; color: var(--accent); }
+table.tbl td.tick { color: var(--green); font-size: 22px; }
+table.tbl td.dash { color: var(--dim); }
+
+/* founder card */
+.fdr { display: flex; flex-direction: column; gap: 14px; }
+.fdr .av { width: 160px; height: 160px; background: linear-gradient(135deg, color-mix(in oklab, var(--accent) 40%, var(--paper)), var(--paper)); border: 1px solid var(--hair2); font-family: var(--serif); font-style: italic; font-size: 72px; color: var(--accent); display: flex; align-items: center; justify-content: center; }
+.fdr.nexus .av { background: var(--ink); color: var(--accent); }
+.fdr .nm { font-family: var(--serif); font-size: 44px; line-height: 1.05; letter-spacing: -.01em; }
+.fdr .role { font-family: var(--mono); font-size: 20px; color: var(--accent); letter-spacing: .14em; text-transform: uppercase; }
+.fdr .bio { font-size: 22px; color: var(--ink2); line-height: 1.55; max-width: 340px; }
+
+/* ask */
+.ask-row { display: grid; grid-template-columns: 320px 1fr; gap: 60px; padding: 28px 0; border-bottom: 1px solid var(--hair); align-items: baseline; }
+.ask-row .k { font-family: var(--mono); font-size: 16px; letter-spacing: .16em; color: var(--mut); text-transform: uppercase; }
+.ask-row .v { font-family: var(--serif); font-size: 56px; line-height: 1.05; }
+.ask-row .v em { font-style: italic; color: var(--accent); }
+.ask-row .v .sub { font-family: var(--sans); font-size: 22px; color: var(--ink2); margin-top: 10px; display: block; font-style: normal; }
+
+/* pull indent lines */
+.lines { position: absolute; inset: 0; pointer-events: none; }
+.lines.e::before { content:""; position: absolute; left: 80px; top: 0; bottom: 0; width: 1px; background: var(--hair); }
+.lines.e::after  { content:""; position: absolute; right: 80px; top: 0; bottom: 0; width: 1px; background: var(--hair); }
+
+/* regions spark */
+.spark { display: grid; grid-template-columns: 200px 1fr 120px; gap: 24px; padding: 14px 0; border-bottom: 1px solid var(--hair); align-items: center; font-family: var(--mono); font-size: 24px; }
+.spark .bar { height: 12px; background: color-mix(in oklab, var(--accent) 22%, transparent); position: relative; }
+.spark .bar > span { position: absolute; inset-block: 0; inset-inline-start: 0; background: var(--accent); }
+.spark .n { color: var(--accent); text-align: end; }
+
+/* manifesto-style list */
+.ml { font-family: var(--serif); font-size: 60px; line-height: 1.25; letter-spacing: -.01em; }
+.ml em { font-style: italic; color: var(--accent); }
+.ml .dim { color: var(--mut); }
+
+/* contacts pill */
+.contacts { display:flex; gap: 36px; font-family: var(--mono); font-size: 24px; color: var(--mut); letter-spacing: .06em; margin-top: 48px; }
+.contacts a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<deck-stage>
+
+<!-- 1 · COVER -->
+<section data-screen-label="01 Cover">
+  <div class="chrome"><span class="l">DCP · SEED</span><span>RIYADH · 2026</span></div>
+  <div style="margin-top: 180px">
+    <div class="eb">Distributed Compute Platform</div>
+    <h1>A GPU <em>sovereign</em><br/>for a Kingdom building<br/>its own <em>AI</em>.</h1>
+  </div>
+  <div class="footer"><span>Tarek · Fadi · Peter · Nexus</span><span>Confidential · 01 / 16</span></div>
+</section>
+
+<!-- 2 · THE PROBLEM -->
+<section data-screen-label="02 Problem">
+  <div class="chrome"><span class="l">01 · THE PROBLEM</span><span>02 / 16</span></div>
+  <div style="margin-top: 140px">
+    <div class="eb">The problem</div>
+    <h2>Saudi Arabia is <em>buying</em> <br/>its intelligence by the hour —<br/>from somewhere <em>else</em>.</h2>
+    <p class="lede">Every inference a Saudi bank, ministry, or startup runs on a frontier model today leaves the Kingdom, gets metered on a US hyperscaler, and returns — along with the data it touched, the latency of the Atlantic, and a bill in dollars.</p>
+    <p class="kicker">Vision 2030 asked for a homegrown AI economy. The pipes underneath it are still foreign.</p>
+  </div>
+  <div class="footer"><span>DCP · Seed</span><span>02 / 16</span></div>
+</section>
+
+<!-- 3 · WHY NOW (FLAGSHIP) -->
+<section class="paper" data-screen-label="03 Why now">
+  <div class="chrome"><span class="l" style="color:#d85f22">02 · WHY NOW</span><span style="color:#645d7a">03 / 16</span></div>
+  <div style="margin-top: 120px">
+    <div class="eb">Why now</div>
+    <div class="mani">
+      Four forces <em>collided</em> in 18 months. <em>PDPL</em> made data residency non-negotiable. <em>ALLaM</em> and <em>JAIS</em> made Arabic frontier models real. GPU supply shifted from scarcity to glut. And <em>Vision 2030</em> put a clock on it.
+    </div>
+  </div>
+  <div style="display: grid; grid-template-columns: repeat(4,1fr); gap: 48px; margin-top: 60px; padding-top: 32px; border-top: 1px solid #d8cfbe">
+    <div><div class="mono" style="color:#d85f22; font-size:24px; letter-spacing:.16em">2024</div><div style="font-family:var(--serif); font-size:24px; margin-top:12px; color:#2a2940; line-height:1.3">PDPL in full force across all sectors.</div></div>
+    <div><div class="mono" style="color:#d85f22; font-size:24px; letter-spacing:.16em">2025</div><div style="font-family:var(--serif); font-size:24px; margin-top:12px; color:#2a2940; line-height:1.3">SDAIA ships <em style="color:#0d9d87">ALLaM</em>; Arabic models hit parity.</div></div>
+    <div><div class="mono" style="color:#d85f22; font-size:24px; letter-spacing:.16em">2026</div><div style="font-family:var(--serif); font-size:24px; margin-top:12px; color:#2a2940; line-height:1.3">Apple Silicon &amp; consumer GPUs become viable hosts.</div></div>
+    <div><div class="mono" style="color:#d85f22; font-size:24px; letter-spacing:.16em">2030</div><div style="font-family:var(--serif); font-size:24px; margin-top:12px; color:#2a2940; line-height:1.3">Vision deadline for a <em style="color:#0d9d87">self-reliant</em> digital economy.</div></div>
+  </div>
+  <div class="footer" style="color:#645d7a"><span>DCP · Seed</span><span>03 / 16</span></div>
+</section>
+
+<!-- 4 · THE INSIGHT -->
+<section data-screen-label="04 Insight">
+  <div class="chrome"><span class="l">03 · THE INSIGHT</span><span>04 / 16</span></div>
+  <div style="margin-top: 220px">
+    <div class="eb">The insight</div>
+    <div class="pull">A sovereign GPU cloud<br/>doesn't need to be <em>built</em>.<br/>It needs to be <em>aggregated</em>.</div>
+    <div class="attr" style="font-size: 24px">— the thesis</div>
+    <p class="lede" style="margin-top: 80px">Saudi Arabia already has tens of thousands of idle GPUs — in game studios, universities, crypto aftermarket, edge data centers. None of them are AI-ready on their own. All of them, networked, are.</p>
+  </div>
+  <div class="footer"><span>DCP · Seed</span><span>04 / 16</span></div>
+</section>
+
+<!-- 5 · WHAT IS DCP -->
+<section data-screen-label="05 What is DCP">
+  <div class="chrome"><span class="l">04 · WHAT IS DCP</span><span>05 / 16</span></div>
+  <div style="margin-top: 140px">
+    <div class="eb">Distributed Compute Platform</div>
+    <h2>A <em>marketplace</em> for Saudi GPUs,<br/>with an <em>API</em> on top.</h2>
+  </div>
+  <div class="three" style="margin-top: 20px">
+    <div class="card"><div class="n">i.</div><div class="t">Renters</div><div class="d">Call an OpenAI-compatible API. Get ALLaM, JAIS, Falcon, SDXL, embeddings. Pay in SAR or USDC. Data never leaves the Kingdom.</div></div>
+    <div class="card"><div class="n">ii.</div><div class="t">Providers</div><div class="d">Plug an M-series Mac, an RTX rig, or a rack of H100s into the network. Pass KYB. Get paid weekly by IBAN, 75% of revenue.</div></div>
+    <div class="card"><div class="n">iii.</div><div class="t">DCP</div><div class="d">Routes every request to the right GPU, in the right region, under the right policy. Clears billing. Enforces PDPL. Takes 25%.</div></div>
+  </div>
+  <div class="footer"><span>DCP · Seed</span><span>05 / 16</span></div>
+</section>
+
+<!-- 6 · FLAGSHIP: FLEET MAP -->
+<section data-screen-label="06 Fleet">
+  <div class="chrome"><span class="l">05 · THE FLEET</span><span>06 / 16</span></div>
+  <div class="spread" style="margin-top: 100px">
+    <div>
+      <div class="eb">The fleet · v0</div>
+      <h3>Five regions.<br/>One <em>routing</em><br/><em>fabric</em>.</h3>
+      <p style="font-size: 24px; line-height: 1.5; color: var(--ink2); margin-top: 24px">At full seed-milestone build we target 487 providers, 1,850 GPUs, and sub-40&nbsp;ms p95 latency across all five regions — PDPL-held workloads pinned to their region of origin.</p>
+      <div style="margin-top: 24px">
+        <div class="spark"><span>Riyadh · RUH</span><div class="bar"><span style="width:71%"></span></div><span class="n">712 GPUs</span></div>
+        <div class="spark"><span>Jeddah · JED</span><div class="bar"><span style="width:68%"></span></div><span class="n">468</span></div>
+        <div class="spark"><span>Dammam · DMM</span><div class="bar"><span style="width:62%"></span></div><span class="n">372</span></div>
+        <div class="spark"><span>Madinah · MED</span><div class="bar"><span style="width:57%"></span></div><span class="n">186</span></div>
+        <div class="spark" style="border-bottom:0"><span>Abha · AHB</span><div class="bar"><span style="width:48%"></span></div><span class="n">112</span></div>
+      </div>
+    </div>
+    <div class="map">
+      <svg viewBox="0 0 700 620" xmlns="http://www.w3.org/2000/svg" fill="none">
+        <!-- stylized saudi outline -->
+        <path d="M110,240 L180,150 L280,110 L380,100 L470,130 L540,140 L600,200 L620,280 L600,360 L540,440 L460,500 L380,540 L300,550 L230,520 L170,470 L130,400 L110,340 Z"
+              stroke="#c9a24c" stroke-width="1.2" fill="#f0eadb"/>
+        <!-- region dots -->
+        <g>
+          <circle cx="400" cy="300" r="42" fill="#c9a24c" opacity=".15"/>
+          <circle cx="400" cy="300" r="12" fill="#c9a24c"/>
+          <text x="420" y="295" font-family="Instrument Serif" font-size="28" fill="#14110d">Riyadh</text>
+          <text x="420" y="315" font-family="JetBrains Mono" font-size="12" fill="#6b6258" letter-spacing="2">712 · 71%</text>
+        </g>
+        <g>
+          <circle cx="230" cy="370" r="32" fill="#c9a24c" opacity=".15"/>
+          <circle cx="230" cy="370" r="9" fill="#c9a24c"/>
+          <text x="130" y="368" font-family="Instrument Serif" font-size="24" fill="#14110d">Jeddah</text>
+        </g>
+        <g>
+          <circle cx="510" cy="240" r="30" fill="#c9a24c" opacity=".15"/>
+          <circle cx="510" cy="240" r="8" fill="#c9a24c"/>
+          <text x="530" y="236" font-family="Instrument Serif" font-size="24" fill="#14110d">Dammam</text>
+        </g>
+        <g>
+          <circle cx="280" cy="280" r="22" fill="#c9a24c" opacity=".15"/>
+          <circle cx="280" cy="280" r="6" fill="#c9a24c"/>
+          <text x="180" y="275" font-family="Instrument Serif" font-size="20" fill="#14110d">Madinah</text>
+        </g>
+        <g>
+          <circle cx="340" cy="460" r="18" fill="#c9a24c" opacity=".15"/>
+          <circle cx="340" cy="460" r="5" fill="#c9a24c"/>
+          <text x="260" y="478" font-family="Instrument Serif" font-size="18" fill="#14110d">Abha</text>
+        </g>
+        <!-- routing lines -->
+        <g stroke="#c9a24c" stroke-width=".8" stroke-dasharray="3 4" opacity=".55">
+          <line x1="400" y1="300" x2="230" y2="370"/>
+          <line x1="400" y1="300" x2="510" y2="240"/>
+          <line x1="400" y1="300" x2="280" y2="280"/>
+          <line x1="400" y1="300" x2="340" y2="460"/>
+          <line x1="230" y1="370" x2="340" y2="460"/>
+          <line x1="510" y1="240" x2="400" y2="300"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+  <div class="footer"><span>DCP · Seed</span><span>06 / 16</span></div>
+</section>
+
+<!-- 7 · HOW IT WORKS (architecture in words) -->
+<section data-screen-label="07 How it works">
+  <div class="chrome"><span class="l">06 · HOW IT WORKS</span><span>07 / 16</span></div>
+  <div style="margin-top: 140px">
+    <div class="eb">How it works</div>
+    <h2>Call an <em>API</em>. We do the<br/>ugly middle <em>for you</em>.</h2>
+  </div>
+  <div style="display:grid; grid-template-columns: 48px 1fr; gap: 32px 40px; margin-top: 32px; font-family: var(--serif); font-size: 30px; line-height: 1.28;">
+    <div class="mono" style="color:var(--accent); font-size:24px; letter-spacing:.14em; padding-top:10px">01</div>
+    <div>A request lands at <em style="color:var(--accent)">api.dcp.sa</em> — OpenAI-compatible, Arabic or English.</div>
+    <div class="mono" style="color:var(--accent); font-size:24px; letter-spacing:.14em; padding-top:10px">02</div>
+    <div>The router classifies it — PDPL-sensitive? content-policy clean? — and picks a region, model, provider, slot.</div>
+    <div class="mono" style="color:var(--accent); font-size:24px; letter-spacing:.14em; padding-top:10px">03</div>
+    <div>The GPU runs the job. Tokens stream back with <em style="color:var(--accent)">sub-40&nbsp;ms p95</em>.</div>
+    <div class="mono" style="color:var(--accent); font-size:24px; letter-spacing:.14em; padding-top:10px">04</div>
+    <div>Billing clears in SAR. Providers see their share accrue in real time; payout every two weeks.</div>
+    <div class="mono" style="color:var(--accent); font-size:24px; letter-spacing:.14em; padding-top:10px">05</div>
+    <div>Every action logged, signed, held for seven years — PDPL &amp; SAMA.</div>
+  </div>
+  <div class="footer"><span>DCP · Seed</span><span>07 / 16</span></div>
+</section>
+
+<!-- 8 · MARKET -->
+<section data-screen-label="08 Market">
+  <div class="chrome"><span class="l">07 · MARKET</span><span>08 / 16</span></div>
+  <div style="margin-top: 120px; display:grid; grid-template-columns: 1fr 1fr; gap: 100px; flex: 1">
+    <div>
+      <div class="eb">Market</div>
+      <h3>The number we're<br/>chasing is <em>SAR</em>.</h3>
+      <p class="lede">GCC cloud &amp; AI-inference spend is expected to clear <em style="color:var(--accent); font-style:italic">SAR 42B</em> by 2028. Today, ≈ 94% of it leaves the region. A 5% win is a SAR 2B business.</p>
+    </div>
+    <div style="padding-top: 60px">
+      <div style="border-top:1px solid var(--hair); padding-top: 28px">
+        <div class="mono" style="font-size:20px; color:var(--mut); letter-spacing:.14em">TAM · GCC 2028</div>
+        <div class="big-n" style="font-size:180px; margin-top: 8px">SAR 42B</div>
+      </div>
+      <div style="border-top:1px solid var(--hair); padding-top: 28px; margin-top: 60px">
+        <div class="mono" style="font-size:20px; color:var(--mut); letter-spacing:.14em">SAM · Saudi AI-inference</div>
+        <div class="big-n" style="font-size:140px; margin-top: 8px; color:var(--ink)">SAR 11B</div>
+      </div>
+      <div style="border-top:1px solid var(--hair); padding-top: 28px; margin-top: 60px">
+        <div class="mono" style="font-size:20px; color:var(--mut); letter-spacing:.14em">SOM · 5% by year 4</div>
+        <div class="big-n" style="font-size:140px; margin-top: 8px">SAR 550M</div>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span>DCP · Seed</span><span>08 / 16</span></div>
+</section>
+
+<!-- 9 · BUSINESS MODEL -->
+<section data-screen-label="09 Business model">
+  <div class="chrome"><span class="l">08 · BUSINESS MODEL</span><span>09 / 16</span></div>
+  <div style="margin-top: 110px">
+    <div class="eb">Business model</div>
+    <h2>We take <em>25%</em>.<br/>Providers keep <em>75%</em>.</h2>
+    <p class="lede" style="font-size: 26px">Every SAR 1,000 of inference we sell, we keep SAR 250. Providers keep SAR 750 — and fund their own hardware refresh. Our COGS is routing, compliance, support. It scales sub-linearly.</p>
+  </div>
+  <div style="display:flex; height: 80px; margin-top: 48px; border: 1px solid var(--hair)">
+    <div style="flex:75; background: var(--paper); border-inline-end: 1px solid var(--hair); display:flex; align-items:center; justify-content:center; font-family: var(--serif); font-size: 36px; letter-spacing: -.01em">Provider · 75%</div>
+    <div style="flex:25; background: var(--accent); color: var(--bg); display:flex; align-items:center; justify-content:center; font-family: var(--serif); font-style:italic; font-size: 36px; letter-spacing: -.01em">DCP · 25%</div>
+  </div>
+  <div style="display:grid; grid-template-columns: repeat(3,1fr); gap: 64px; margin-top: 60px">
+    <div><div class="mono" style="color:var(--accent); font-size:20px; letter-spacing:.16em">UNIT ECONOMICS</div><div style="font-family:var(--serif); font-size: 28px; margin-top: 14px; line-height:1.3">Blended gross margin on platform fee: <em style="color:var(--accent); font-style:italic">78%</em> at year 2.</div></div>
+    <div><div class="mono" style="color:var(--accent); font-size:20px; letter-spacing:.16em">BREAKEVEN</div><div style="font-family:var(--serif); font-size: 28px; margin-top: 14px; line-height:1.3">~1,200 active GPUs at 65% utilisation. <em style="color:var(--accent); font-style:italic">Month 22.</em></div></div>
+    <div><div class="mono" style="color:var(--accent); font-size:20px; letter-spacing:.16em">COMPOUNDING</div><div style="font-family:var(--serif); font-size: 28px; margin-top: 14px; line-height:1.3">Every new model &amp; region widens the moat without new COGS lines.</div></div>
+  </div>
+  <div class="footer"><span>DCP · Seed</span><span>09 / 16</span></div>
+</section>
+
+<!-- 10 · COMPETITION -->
+<section data-screen-label="10 Competition">
+  <div class="chrome"><span class="l">09 · COMPETITION</span><span>10 / 16</span></div>
+  <div style="margin-top: 100px">
+    <div class="eb">The landscape</div>
+    <h3>Why not <em>AWS</em>? &nbsp; Why not <em>Together</em>?</h3>
+  </div>
+  <table class="tbl" style="margin-top: 10px">
+    <thead><tr>
+      <th>&nbsp;</th>
+      <th>AWS Bedrock / Azure OpenAI</th>
+      <th>Together · RunPod · Modal</th>
+      <th>National clouds (SCCC, Mobily Cloud)</th>
+      <th style="color:var(--accent)">DCP</th>
+    </tr></thead>
+    <tbody>
+      <tr><td>Data stays in Saudi</td><td class="dash">partial (residency ≠ processing)</td><td class="dash">—</td><td class="tick">✓</td><td class="tick">✓</td></tr>
+      <tr><td>Arabic-first models</td><td class="dash">—</td><td class="dash">—</td><td class="dash">limited</td><td class="tick">✓ ALLaM · JAIS</td></tr>
+      <tr><td>PDPL + SAMA native</td><td class="dash">—</td><td class="dash">—</td><td class="tick">✓</td><td class="tick">✓</td></tr>
+      <tr><td>Marketplace supply</td><td class="dash">—</td><td class="dash">global, speculative</td><td class="dash">—</td><td class="tick">✓ Kingdom-local</td></tr>
+      <tr><td>Billing in SAR / USDC</td><td class="dash">USD</td><td class="dash">USD</td><td class="tick">SAR</td><td class="tick">SAR &amp; USDC</td></tr>
+      <tr><td>Route through sovereign-held regions</td><td class="dash">—</td><td class="dash">—</td><td class="dash">single-region</td><td class="tick">✓ five</td></tr>
+    </tbody>
+  </table>
+  <div class="footer"><span>DCP · Seed</span><span>10 / 16</span></div>
+</section>
+
+<!-- 11 · PRODUCT (what we've already built) -->
+<section data-screen-label="11 Product">
+  <div class="chrome"><span class="l">10 · PRODUCT</span><span>11 / 16</span></div>
+  <div style="margin-top: 120px">
+    <div class="eb">Already built · ready to ship</div>
+    <h2>Three full consoles.<br/>One <em>routing fabric</em>.</h2>
+  </div>
+  <div class="three" style="margin-top: 60px">
+    <div class="card"><div class="n">a</div><div class="t">Renter console</div><div class="d">Playground, docs, API keys, SAR wallet, live monitor, usage analytics, cost dashboard. OpenAI-compatible endpoints shipped.</div></div>
+    <div class="card"><div class="n">b</div><div class="t">Provider console</div><div class="d">Six-step onboarding, rig health, earnings in real time, IBAN payouts, compliance dashboard. KYB queue wired end-to-end.</div></div>
+    <div class="card"><div class="n">c</div><div class="t">Ops console</div><div class="d">Fleet map, jobs monitor, KYB, customers, models, payouts, incidents, compliance, pricing, audit log, on-call, tickets.</div></div>
+  </div>
+  <p class="kicker" style="margin-top: 40px; font-size: 28px">The hard part is done. What the raise buys is supply &amp; demand.</p>
+  <div class="footer"><span>DCP · Seed</span><span>11 / 16</span></div>
+</section>
+
+<!-- 12 · GO-TO-MARKET -->
+<section data-screen-label="12 GTM">
+  <div class="chrome"><span class="l">11 · GO-TO-MARKET</span><span>12 / 16</span></div>
+  <div style="margin-top: 120px">
+    <div class="eb">Go-to-market</div>
+    <h2>Three <em>flywheels</em>,<br/>started in <em>sequence</em>.</h2>
+  </div>
+  <div class="three" style="margin-top: 40px">
+    <div class="card"><div class="mono" style="font-size:20px; letter-spacing:.16em; color:var(--accent)">MONTHS 0–6</div><div class="t" style="margin-top:10px">Seed supply</div><div class="d">Ten anchor providers in Riyadh — gaming cafés, university clusters, a sovereign-friendly crypto aftermarket. Pay above market; lock supply.</div></div>
+    <div class="card"><div class="mono" style="font-size:20px; letter-spacing:.16em; color:var(--accent)">MONTHS 3–12</div><div class="t" style="margin-top:10px">Design-partner demand</div><div class="d">Three flagship customers — one ministry, one bank, one startup champion. Free credits in exchange for logos, case studies, and regulatory legitimacy.</div></div>
+    <div class="card"><div class="mono" style="font-size:20px; letter-spacing:.16em; color:var(--accent)">MONTHS 9–18</div><div class="t" style="margin-top:10px">Self-serve scale</div><div class="d">Public sign-up, SAR 200 free credit, Arabic-first onboarding, StartupStudio partnerships. Every vertical has a template.</div></div>
+  </div>
+  <div class="footer"><span>DCP · Seed</span><span>12 / 16</span></div>
+</section>
+
+<!-- 13 · TEAM -->
+<section data-screen-label="13 Team">
+  <div class="chrome"><span class="l">12 · TEAM</span><span>13 / 16</span></div>
+  <div style="margin-top: 100px">
+    <div class="eb">The founders</div>
+    <h2>Three people <em>and</em><br/>something new.</h2>
+  </div>
+  <div style="display:grid; grid-template-columns: repeat(4,1fr); gap: 48px; margin-top: 50px">
+    <div class="fdr"><div class="av">T</div><div><div class="role">Ceo · go-to-market</div><div class="nm">Tarek</div></div><div class="bio">Kingdom-side operator. Sells to ministries, banks, and the people who sign off on PDPL.</div></div>
+    <div class="fdr"><div class="av">F</div><div><div class="role">Cto · platform</div><div class="nm">Fadi</div></div><div class="bio">Built the routing fabric, the three consoles, and the billing pipeline.</div></div>
+    <div class="fdr"><div class="av">P</div><div><div class="role">Cpo · design &amp; brand</div><div class="nm">Peter</div></div><div class="bio">Turns the system into something renters, providers, and regulators all want to use.</div></div>
+    <div class="fdr nexus"><div class="av">✦</div><div><div class="role">Partner · ai</div><div class="nm">Nexus</div></div><div class="bio">In-house AI. Writes code, answers tickets, drafts compliance memos.</div></div>
+  </div>
+  <p class="kicker" style="margin-top: 40px; font-size: 30px">Small by design — using the tools we're building to stay lean.</p>
+  <div class="footer"><span>DCP · Seed</span><span>13 / 16</span></div>
+</section>
+
+<!-- 14 · MILESTONES -->
+<section data-screen-label="14 Milestones">
+  <div class="chrome"><span class="l">13 · MILESTONES</span><span>14 / 16</span></div>
+  <div style="margin-top: 120px">
+    <div class="eb">What the raise buys</div>
+    <h2>18 months. Four <em>milestones</em>.</h2>
+  </div>
+  <div style="margin-top: 40px">
+    <div class="ask-row"><span class="k">Month 06</span><span class="v">Five regions live, <em>100 GPUs</em> paid, one design-partner logo.<span class="sub">Proof that the routing fabric clears real jobs at real margins.</span></span></div>
+    <div class="ask-row"><span class="k">Month 12</span><span class="v"><em>500 GPUs</em>. Three enterprise logos. ALLaM-34B exclusive.<span class="sub">The Arabic-first angle becomes the wedge.</span></span></div>
+    <div class="ask-row"><span class="k">Month 18</span><span class="v"><em>1,500 GPUs</em>. SAR 4M ARR run-rate. Series A metrics in hand.<span class="sub">Breakeven on seed burn · strong hand for the next raise.</span></span></div>
+    <div class="ask-row" style="border-bottom:0"><span class="k">Throughout</span><span class="v">Every action <em>PDPL-clean</em>, <em>SAMA-auditable</em>, <em>SDAIA-aware</em>.<span class="sub">Regulatory moat compounds with every sovereign customer we sign.</span></span></div>
+  </div>
+  <div class="footer"><span>DCP · Seed</span><span>14 / 16</span></div>
+</section>
+
+<!-- 15 · THE ASK -->
+<section class="paper" data-screen-label="15 Ask">
+  <div class="chrome"><span class="l" style="color:#d85f22">14 · THE ASK</span><span style="color:#645d7a">15 / 16</span></div>
+  <div style="margin-top: 100px">
+    <div class="eb">The ask</div>
+    <h3 style="color:#0a0b1a; font-size: 76px">We're raising <em>$5M</em> to build the sovereign <em>cloud</em> that Vision 2030 forgot to budget for.</h3>
+  </div>
+  <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 80px; margin-top: 40px">
+    <div>
+      <div class="mono" style="font-size:20px; letter-spacing:.16em; color:#d85f22; margin-bottom: 20px">USE OF FUNDS</div>
+      <div style="display:grid; grid-template-columns: 90px 1fr; gap: 10px 28px; font-family: var(--serif); font-size: 24px; line-height: 1.3; color:#2a2940">
+        <div style="color:#d85f22; font-style:italic">45%</div><div>Supply incentives · anchor-provider subsidies</div>
+        <div style="color:#d85f22; font-style:italic">25%</div><div>Team · 4 hires (SRE, DevRel, GTM, compliance)</div>
+        <div style="color:#d85f22; font-style:italic">15%</div><div>Models · exclusive hosting &amp; fine-tune deals</div>
+        <div style="color:#d85f22; font-style:italic">10%</div><div>Regulatory · PDPL / SAMA / SDAIA</div>
+        <div style="color:#d85f22; font-style:italic">05%</div><div>Buffer</div>
+      </div>
+    </div>
+    <div>
+      <div class="mono" style="font-size:20px; letter-spacing:.16em; color:#d85f22; margin-bottom: 20px">TERMS</div>
+      <div style="font-family: var(--serif); font-size: 36px; line-height: 1.2; color: #0a0b1a">
+        <div>SAFE · cap <em style="color:#d85f22; font-style:italic">$25M</em>.</div>
+        <div style="margin-top: 18px">20% discount · no MFN.</div>
+        <div style="margin-top: 18px; color: #645d7a; font-size: 26px">Committing $1M+? We'll open a seat.</div>
+      </div>
+    </div>
+  </div>
+  <div class="footer" style="color:#645d7a"><span>DCP · Seed</span><span>15 / 16</span></div>
+</section>
+
+<!-- 16 · CLOSE -->
+<section data-screen-label="16 Close">
+  <div class="chrome"><span class="l">—</span><span>16 / 16</span></div>
+  <div style="margin-top: 240px">
+    <div class="eb">One more thing</div>
+    <div class="pull" style="font-size:108px">A country that trains<br/>its own <em>models</em><br/>should <em>own</em> the silicon<br/>they run on.</div>
+    <div class="attr">— DCP · 2026</div>
+  </div>
+  <div class="contacts">
+    <span>dcp.sa</span>
+    <a href="mailto:hello@dcp.sa">hello@dcp.sa</a>
+    <span>Tarek · Fadi · Peter · Nexus</span>
+  </div>
+  <div class="footer"><span>DCP · Seed</span><span>fin.</span></div>
+</section>
+
+</deck-stage>
+<script src="deck-stage.js"></script>
+</body>
+</html>

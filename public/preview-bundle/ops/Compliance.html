@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>DCP Ops — Compliance</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../assets/dcp-kit.css" />
+<link rel="stylesheet" href="../assets/ops-shell.css" />
+<style>
+.cmp-row { display: grid; grid-template-columns: 110px 140px 1fr 120px 100px 110px; gap: 14px; padding: 14px 16px; border-bottom: 1px solid var(--hair); align-items: start; cursor: pointer; }
+.cmp-row:hover { background: var(--bg-2); }
+.cmp-row .sm { font-size: 12.5px; color: var(--ink); line-height: 1.55; }
+.cmp-sla { font-family: var(--mono); font-size: 10px; letter-spacing: .08em; padding: 3px 6px; display: inline-block; }
+.cmp-sla.ok { color: var(--green); border: 1px solid color-mix(in oklab, var(--green) 40%, transparent); }
+.cmp-sla.risk { color: var(--amber); border: 1px solid color-mix(in oklab, var(--amber) 40%, transparent); }
+</style>
+</head>
+<body class="ops">
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../assets/data-ops-admin.js"></script>
+<script type="text/babel" src="../assets/ops-shell.jsx"></script>
+<script type="text/babel">
+const { useState } = React;
+const A = window.DCP_OPS_ADMIN;
+const { OpsShell, Chip, Kpi } = window;
+
+const kindLabel = {
+  "pdpl-residency": "PDPL · residency",
+  "content-policy": "Content policy",
+  "data-request":   "Data request",
+  "right-to-delete":"Right to delete",
+  "red-team":       "Red team",
+};
+
+function App() {
+  const [kind, setKind] = useState("all");
+  const rows = kind === "all" ? A.compliance_queue : A.compliance_queue.filter(c => c.kind === kind);
+  const kinds = [...new Set(A.compliance_queue.map(c => c.kind))];
+  const kindCount = k => A.compliance_queue.filter(c => c.kind === k).length;
+
+  return (
+    <OpsShell current="compliance" crumb="Compliance" alarms={1} env="PROD" build={A.build}>
+      <div className="ops-page">
+        <div className="ops-page-hd">
+          <div>
+            <div className="ops-page-eb">Ops · Policy</div>
+            <h1 className="ops-page-h1">PDPL, content &amp; <em>red-team</em></h1>
+            <div className="ops-page-lede">
+              Review queue for every privacy, content-policy, and red-team event on the platform. All reviews ladder up to SDAIA — log every action.
+            </div>
+          </div>
+          <div className="ops-page-actions">
+            <button className="ops-btn">Policy doc</button>
+            <button className="ops-btn primary">Quarterly report</button>
+          </div>
+        </div>
+
+        <div className="ops-grid c4" style={{marginBottom:14}}>
+          <Kpi label="Open reviews"   value={A.compliance_counters.open} delta={A.compliance_counters.sla_risk + " at SLA risk"} deltaKind="down" em />
+          <Kpi label="Closed · 30d"   value={A.compliance_counters.closed_30d} delta="med. review 6.4h" />
+          <Kpi label="PDPL holds live" value={A.anomalies_1h?.pdpl_hold ?? 4} delta="all routed to RUH" deltaKind="neutral" />
+          <Kpi label="Red-team pass rate" value="96.2%" delta="Q2 campaign" />
+        </div>
+
+        <div className="ops-toolbar">
+          <div className="ops-filters">
+            <button className={"ops-filter " + (kind==="all"?"on":"")} onClick={()=>setKind("all")}>All <span className="ct">{A.compliance_queue.length}</span></button>
+            {kinds.map(k => (
+              <button key={k} className={"ops-filter " + (kind===k?"on":"")} onClick={()=>setKind(k)}>{kindLabel[k]} <span className="ct">{kindCount(k)}</span></button>
+            ))}
+          </div>
+          <input className="ops-search" placeholder="customer / review id…" />
+        </div>
+
+        <div className="ops-card" style={{padding:0}}>
+          <div style={{display:"grid", gridTemplateColumns:"110px 140px 1fr 120px 100px 110px", gap:14, padding:"8px 16px", background:"var(--bg-2)", borderBottom:"1px solid var(--hair-2)", fontFamily:"var(--mono)", fontSize:10, letterSpacing:".12em", color:"var(--mut)", textTransform:"uppercase"}}>
+            <span>ID</span><span>Kind</span><span>Summary</span><span>Customer</span><span>State</span><span style={{textAlign:"end"}}>SLA</span>
+          </div>
+          {rows.map(c => {
+            const slaRisk = c.sla_h <= 4;
+            return (
+              <div key={c.id} className="cmp-row">
+                <span className="mono" style={{color:"var(--accent)", fontSize:11}}>{c.id}</span>
+                <span><Chip kind={c.kind==="pdpl-residency"?"info":c.kind==="content-policy"?"err":c.kind==="red-team"?"warn":"mut"}>{kindLabel[c.kind]}</Chip></span>
+                <span>
+                  <div className="sm">{c.summary}</div>
+                  <div className="mono dim" style={{fontSize:10, marginTop:4}}>raised {c.raised} · reviewer {c.reviewer}</div>
+                </span>
+                <span className="mono" style={{fontSize:11, color:"var(--ink-2)"}}>{c.customer}</span>
+                <span><Chip kind={c.state==="auto-closed"?"ok":c.state==="scheduled"?"info":"warn"} dot>{c.state}</Chip></span>
+                <span style={{textAlign:"end"}}><span className={"cmp-sla " + (slaRisk?"risk":"ok")}>{c.sla_h}h</span></span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </OpsShell>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

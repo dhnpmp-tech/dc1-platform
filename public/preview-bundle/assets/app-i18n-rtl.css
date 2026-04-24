@@ -1,0 +1,72 @@
+/* ═══════════════════════════════════════════════════════════════
+ * DCP app-i18n-rtl.css — RTL + Arabic typography overrides
+ * Applied when <html dir="rtl">. Arabic uses IBM Plex Sans Arabic
+ * (pairs well with Instrument Serif headings, which we keep
+ * as-is — serif Arabic support is inconsistent, and our layout
+ * uses English product nouns like SAR, USDC, GPU in headings
+ * anyway, so Instrument Serif still carries the page.)
+ *
+ * Numbers stay Latin (tabular) because financial tables with
+ * Arabic-Indic digits are hard for mixed-audience dashboards.
+ * We do use Arabic-Indic ONLY where copy has been manually
+ * authored with them (see i18n.js).
+ * ═══════════════════════════════════════════════════════════════ */
+
+html[dir="rtl"] body {
+  font-family: "IBM Plex Sans Arabic", "Noto Sans Arabic", var(--sans);
+}
+
+/* Preserve Latin font for content that's still English (code, hashes, addresses) */
+html[dir="rtl"] .mono, html[dir="rtl"] [style*="var(--mono)"] { /* body-level mono stays */
+}
+
+/* Arabic reads better with slightly looser line-height */
+html[dir="rtl"] p, html[dir="rtl"] .wh-lede, html[dir="rtl"] .lm-lede,
+html[dir="rtl"] .gc-lede, html[dir="rtl"] .cd-lede { line-height: 1.7; }
+
+/* Fix arrow glyphs that read "forward" based on direction */
+html[dir="rtl"] .dir-arrow::before { content: "←"; }
+html[ dir="ltr"] .dir-arrow::before { content: "→"; }
+
+/* Topbar breadcrumb separator — keep neutral */
+html[dir="rtl"] .tb-crumb .sep { transform: scaleX(-1); }
+
+/* Sidebar item badges — stay on the trailing edge via logical props already,
+   but the "on" indicator should use inline-start margin */
+html[dir="rtl"] .sb-head .env { text-align: start; }
+
+/* Segmented controls — already flip naturally via logical borders */
+/* Progress bars are fine — .lm-pb-f uses `inset: 0 auto 0 0` which is physical.
+   Switch to logical. */
+html[dir="rtl"] .lm-pb-f,
+html[dir="rtl"] .budget-bar-f,
+html[dir="rtl"] .mb-bar-f,
+html[dir="rtl"] .tok-bar-f,
+html[dir="rtl"] .rate-fill { inset: 0 0 0 auto !important; }
+
+/* Token-bar right edge "now" marker stays on the right visually — flip */
+html[dir="rtl"] .token-bar { direction: rtl; }
+
+/* Chart X-axis in RTL should read right→left */
+html[dir="rtl"] .chart, html[dir="rtl"] .tp-chart { direction: rtl; }
+html[dir="rtl"] .chart-x { direction: rtl; }
+
+/* Tables — ensure headers use logical alignment */
+html[dir="rtl"] table th, html[dir="rtl"] table td { text-align: start; }
+
+/* Language toggle button — keep always in monofont */
+.lang-tog { letter-spacing: .12em !important; }
+
+/* Job-row border accent — use inline-start */
+html[dir="rtl"] .job-row.streaming,
+html[dir="rtl"] .job-row.queued { border-left: 0; }
+html[dir="rtl"] .job-row.streaming { border-inline-start: 3px solid var(--teal); }
+html[dir="rtl"] .job-row.queued { border-inline-start: 3px solid var(--mut); }
+
+/* Budget-bar marker position already uses inset-inline-start — good. */
+
+/* In auto-flowing Latin numerics inside Arabic sentences, keep the
+   ligatures clean by forcing isolate */
+html[dir="rtl"] .num, html[dir="rtl"] [style*="var(--mono)"] {
+  unicode-bidi: isolate;
+}

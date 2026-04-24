@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>DCP Ops — Jobs Monitor</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+
+<link rel="stylesheet" href="../assets/dcp-kit.css" />
+<link rel="stylesheet" href="../assets/ops-shell.css" />
+
+<style>
+/* Live stream — terminal feel */
+.jm-stream { background: var(--paper); border: 1px solid var(--hair); padding: 0; font-family: var(--mono); font-size: 11px; overflow: hidden; }
+.jm-stream-hd { display: grid; grid-template-columns: 76px 84px 1fr 130px 110px 80px 70px 70px 90px; gap: 12px; padding: 8px 14px; background: var(--bg-2); border-bottom: 1px solid var(--hair-2); font-size: 9.5px; color: var(--mut); letter-spacing: .12em; text-transform: uppercase; }
+.jm-row { display: grid; grid-template-columns: 76px 84px 1fr 130px 110px 80px 70px 70px 90px; gap: 12px; padding: 6px 14px; border-bottom: 1px solid var(--hair); align-items: center; animation: jm-fade-in .3s ease-out; }
+.jm-row:hover { background: var(--bg-2); cursor: pointer; }
+.jm-row.sel { background: color-mix(in oklab, var(--accent) 10%, transparent); }
+.jm-row .ts { color: var(--dim); }
+.jm-row .id { color: var(--mut); font-size: 10px; }
+.jm-row .cx { color: var(--ink); }
+.jm-row .model { color: var(--ink-2); }
+.jm-row .region { color: var(--accent); font-size: 10px; letter-spacing: .1em; }
+.jm-row .num { color: var(--ink-2); text-align: end; }
+.jm-row .ms { color: var(--mut); text-align: end; }
+.jm-row.ok           .st { color: var(--green); }
+.jm-row.slow         { background: color-mix(in oklab, var(--amber)  6%, transparent); }
+.jm-row.slow         .st { color: var(--amber); }
+.jm-row.retry        { background: color-mix(in oklab, var(--amber)  8%, transparent); }
+.jm-row.retry        .st { color: var(--amber); }
+.jm-row.hold_overrun { background: color-mix(in oklab, var(--orange) 8%, transparent); }
+.jm-row.hold_overrun .st { color: var(--orange); }
+.jm-row.blocked      { background: color-mix(in oklab, var(--red)    12%, transparent); }
+.jm-row.blocked      .st { color: var(--red); }
+.jm-row.pdpl_hold    { background: color-mix(in oklab, var(--accent) 12%, transparent); }
+.jm-row.pdpl_hold    .st { color: var(--accent); }
+
+@keyframes jm-fade-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
+.jm-anomaly { font-family: var(--mono); font-size: 10px; color: var(--mut); padding: 0 14px 6px; margin-top: -4px; border-bottom: 1px solid var(--hair); }
+.jm-anomaly.slow         { color: var(--amber); background: color-mix(in oklab, var(--amber)  6%, transparent); }
+.jm-anomaly.retry        { color: var(--amber); background: color-mix(in oklab, var(--amber)  8%, transparent); }
+.jm-anomaly.hold_overrun { color: var(--orange);background: color-mix(in oklab, var(--orange) 8%, transparent); }
+.jm-anomaly.blocked      { color: var(--red);   background: color-mix(in oklab, var(--red)   12%, transparent); }
+.jm-anomaly.pdpl_hold    { color: var(--accent);background: color-mix(in oklab, var(--accent) 12%, transparent); }
+
+.jm-throughput { background: var(--paper); border: 1px solid var(--hair); padding: 14px; position: relative; overflow: hidden; }
+.jm-pulse-ring { position: absolute; top: 18px; right: 18px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent) 50%, transparent); animation: jm-pulse 1.6s infinite; }
+@keyframes jm-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent) 60%, transparent); } 70% { box-shadow: 0 0 0 14px color-mix(in oklab, var(--accent) 0%, transparent); } 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent) 0%, transparent); } }
+
+.jm-hz { display: flex; gap: 1px; align-items: flex-end; height: 48px; }
+.jm-hz .b { flex: 1; background: var(--accent); min-width: 1px; opacity: .7; transition: height .3s, opacity .2s; }
+
+.jm-anomaly-tile { background: var(--paper); border: 1px solid var(--hair); padding: 12px 14px; cursor: pointer; transition: border-color .15s; }
+.jm-anomaly-tile:hover { border-color: var(--accent); }
+.jm-anomaly-tile .n { font-family: var(--serif); font-size: 28px; line-height: 1; }
+.jm-anomaly-tile .n.warn { color: var(--amber); }
+.jm-anomaly-tile .n.err  { color: var(--red); }
+.jm-anomaly-tile .n.info { color: var(--accent); }
+.jm-anomaly-tile .n.orange{ color: var(--orange); }
+.jm-anomaly-tile .l { font-family: var(--mono); font-size: 9.5px; color: var(--mut); letter-spacing: .12em; text-transform: uppercase; margin-top: 4px; }
+.jm-anomaly-tile.on { border-color: var(--accent); background: color-mix(in oklab, var(--accent) 6%, var(--paper)); }
+
+/* Detail panel */
+.jm-detail { background: var(--paper); border: 1px solid var(--hair); padding: 16px; position: sticky; top: 70px; max-height: calc(100vh - 90px); overflow-y: auto; }
+.jm-detail-t { font-family: var(--serif); font-size: 22px; line-height: 1.1; letter-spacing: -.01em; }
+.jm-detail-t em { color: var(--accent); font-style: italic; }
+.jm-detail-meta { font-family: var(--mono); font-size: 10px; color: var(--mut); letter-spacing: .08em; margin-top: 4px; }
+
+.jm-kv { display: grid; grid-template-columns: 90px 1fr; gap: 6px 12px; padding: 6px 0; font-family: var(--mono); font-size: 11px; }
+.jm-kv .k { color: var(--mut); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.jm-kv .v { color: var(--ink); }
+
+.jm-code { background: var(--bg); border: 1px solid var(--hair-2); padding: 10px 12px; font-family: var(--mono); font-size: 11px; color: var(--ink-2); white-space: pre-wrap; line-height: 1.55; margin: 6px 0; }
+.jm-code .k  { color: var(--accent); }
+.jm-code .s  { color: var(--green); }
+.jm-code .n  { color: var(--amber); }
+.jm-code .dim { color: var(--mut); }
+</style>
+</head>
+<body class="ops">
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script src="../assets/data-ops-admin.js"></script>
+<script type="text/babel" src="../assets/ops-shell.jsx"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useMemo, useRef } = React;
+const A = window.DCP_OPS_ADMIN;
+const { OpsShell, Chip, Kpi } = window;
+
+function fmt(n, d=0) { return n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }); }
+
+const STATUS_FILTERS = [
+  { k:"all",         l:"All",             c:"mut"   },
+  { k:"ok",          l:"OK",              c:"ok"    },
+  { k:"slow",        l:"Slow",            c:"warn"  },
+  { k:"retry",       l:"Retry",           c:"warn"  },
+  { k:"hold_overrun",l:"Hold overrun",    c:"orange"},
+  { k:"blocked",     l:"Policy-blocked",  c:"err"   },
+  { k:"pdpl_hold",   l:"PDPL-held",       c:"info"  },
+];
+
+/* Live hz chart — bars representing throughput in tokens/sec/100 over last 30s */
+function useThroughput() {
+  const [data, setData] = useState(() => Array.from({length: 80}, () => 3200 + Math.random()*800));
+  useEffect(() => {
+    const id = setInterval(() => {
+      setData(prev => {
+        const next = prev.slice(1);
+        // add a new value with some pulsing - mid-volatile
+        const last = prev[prev.length-1];
+        const delta = (Math.random() - 0.5) * 400;
+        next.push(Math.max(2400, Math.min(4600, last + delta)));
+        return next;
+      });
+    }, 400);
+    return () => clearInterval(id);
+  }, []);
+  return data;
+}
+
+function ThroughputChart() {
+  const data = useThroughput();
+  const max = Math.max(...data);
+  const now = data[data.length-1];
+  return (
+    <div className="jm-throughput">
+      <div className="jm-pulse-ring" />
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:10}}>
+        <div>
+          <div style={{fontFamily:"var(--mono)", fontSize:10, letterSpacing:".14em", color:"var(--mut)", textTransform:"uppercase"}}>TOKENS / SEC · LIVE</div>
+          <div style={{fontFamily:"var(--serif)", fontSize:30, lineHeight:1.05, marginTop:3}}>
+            <em style={{color:"var(--accent)", fontStyle:"italic"}}>{fmt(Math.round(now*100))}</em>
+          </div>
+        </div>
+        <div style={{textAlign:"end"}}>
+          <div style={{fontFamily:"var(--mono)", fontSize:10, letterSpacing:".08em", color:"var(--mut)"}}>30s window</div>
+          <div style={{fontFamily:"var(--mono)", fontSize:10, color:"var(--green)"}}>● streaming</div>
+        </div>
+      </div>
+      <div className="jm-hz">
+        {data.map((v,i) => (
+          <div key={i} className="b" style={{height: `${(v/max)*100}%`, opacity: 0.35 + 0.65*(i/data.length)}} />
+        ))}
+      </div>
+      <div style={{display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:8, marginTop:10, paddingTop:10, borderTop:"1px dashed var(--hair)", fontFamily:"var(--mono)", fontSize:10, color:"var(--mut)", letterSpacing:".04em"}}>
+        <div>p50 <span style={{color:"var(--ink)"}}>17.4ms</span></div>
+        <div>p95 <span style={{color:"var(--ink)"}}>34.8ms</span></div>
+        <div>err <span style={{color:"var(--green)"}}>0.42%</span></div>
+        <div>rpm <span style={{color:"var(--ink)"}}>89.2k</span></div>
+      </div>
+    </div>
+  );
+}
+
+/* Job stream — infinite-feeling but deterministic-ish. We cycle the seed rows and mutate. */
+function useJobStream() {
+  const [rows, setRows] = useState(A.jobs_stream);
+  useEffect(() => {
+    const id = setInterval(() => {
+      setRows(prev => {
+        // Generate a new job row based on typical distribution
+        const sample = A.jobs_stream[Math.floor(Math.random() * A.jobs_stream.length)];
+        const now = new Date();
+        const hh = String(now.getHours()).padStart(2,"0");
+        const mm = String(now.getMinutes()).padStart(2,"0");
+        const ss = String(now.getSeconds()).padStart(2,"0");
+        const newId = "j_" + Math.random().toString(16).slice(2, 10);
+        const rnd = Math.random();
+        let status = "ok";
+        let anomaly = null;
+        if (rnd < 0.06) { status = "slow"; anomaly = `p95 latency ${Math.round(36 + Math.random()*20)}ms > 34ms threshold`; }
+        else if (rnd < 0.09) { status = "retry"; anomaly = "provider timeout — rerouted"; }
+        else if (rnd < 0.11) { status = "hold_overrun"; anomaly = `actual +${Math.round(30 + Math.random()*40)}% over hold`; }
+        else if (rnd < 0.115) { status = "blocked"; anomaly = "prompt flagged by content policy"; }
+        else if (rnd < 0.12) { status = "pdpl_hold"; anomaly = "health-adjacent data — held for PDPL review"; }
+        const latency = status === "retry" ? null : status === "blocked" ? null : 12 + Math.random() * (status === "slow" ? 40 : 12);
+        const tokIn = Math.round(100 + Math.random()*3000);
+        const tokOut = status === "blocked" ? 0 : status === "retry" ? 0 : Math.round(tokIn * (0.8 + Math.random()*1.8));
+        const row = {
+          id: newId,
+          ts: `${hh}:${mm}:${ss}`,
+          customer: sample.customer,
+          model: sample.model,
+          region: sample.region,
+          provider: sample.provider,
+          tokens_in: tokIn,
+          tokens_out: tokOut,
+          latency_ms: latency ? Math.round(latency) : null,
+          cost_sar: +((tokIn + tokOut*2) * 0.0000065).toFixed(4),
+          status,
+          ...(anomaly ? {anomaly} : {}),
+        };
+        return [row, ...prev].slice(0, 40);
+      });
+    }, 900);
+    return () => clearInterval(id);
+  }, []);
+  return rows;
+}
+
+function JobRow({ r, selected, onSelect }) {
+  return (
+    <>
+      <div className={"jm-row " + r.status + (selected ? " sel" : "")} onClick={() => onSelect(r)}>
+        <span className="ts">{r.ts}</span>
+        <span className="id">{r.id.slice(0,10)}</span>
+        <span className="cx">{r.customer}</span>
+        <span className="model">{r.model}</span>
+        <span><span className="region">{r.region.toUpperCase()}</span> <span style={{color:"var(--mut)"}}>·</span> <span style={{color:"var(--ink-2)"}}>{r.provider}</span></span>
+        <span className="num">{fmt(r.tokens_in)}</span>
+        <span className="num">{fmt(r.tokens_out)}</span>
+        <span className="num">{r.latency_ms==null ? "—" : r.latency_ms + "ms"}</span>
+        <span className="st" style={{textAlign:"end", fontSize:10, letterSpacing:".08em", textTransform:"uppercase"}}>● {r.status.replace("_", " ")}</span>
+      </div>
+      {r.anomaly && (
+        <div className={"jm-anomaly " + r.status}>
+          └ {r.anomaly}
+        </div>
+      )}
+    </>
+  );
+}
+
+function JobDetail({ r }) {
+  if (!r) {
+    return (
+      <div className="jm-detail">
+        <div style={{fontFamily:"var(--mono)", fontSize:10, color:"var(--mut)", letterSpacing:".08em", textTransform:"uppercase"}}>Detail</div>
+        <div style={{fontFamily:"var(--serif)", fontSize:18, marginTop:4, color:"var(--mut)"}}>Select a job to inspect</div>
+        <div style={{fontFamily:"var(--mono)", fontSize:11, color:"var(--dim)", marginTop:10, lineHeight:1.5}}>
+          Click any row in the live stream to see the full request fingerprint — routing decision, provider assignment, billing breakdown, and any anomaly context.
+        </div>
+        <div style={{marginTop:20, padding:"12px 0", borderTop:"1px dashed var(--hair)"}}>
+          <div style={{fontFamily:"var(--mono)", fontSize:10, letterSpacing:".12em", color:"var(--mut)", textTransform:"uppercase", marginBottom:6}}>Hotkeys</div>
+          <div style={{fontFamily:"var(--mono)", fontSize:11, color:"var(--ink-2)", lineHeight:1.9}}>
+            <div>SPACE · pause stream</div>
+            <div>J · next job</div>
+            <div>K · prev job</div>
+            <div>⌘K · filter…</div>
+            <div>E · escalate → incident</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  const status = r.status;
+  return (
+    <div className="jm-detail">
+      <div style={{display:"flex", gap:6, marginBottom:8, flexWrap:"wrap"}}>
+        <Chip kind={status==="ok"?"ok":status==="slow"||status==="retry"?"warn":status==="hold_overrun"?"orange":status==="blocked"?"err":"info"} dot>{status.replace("_", " ")}</Chip>
+        <Chip kind="mut">{r.region.toUpperCase()}</Chip>
+        <Chip kind="info">{r.provider}</Chip>
+      </div>
+      <div className="jm-detail-t"><em>{r.id}</em></div>
+      <div className="jm-detail-meta">{r.ts} AST · {r.customer} · {r.model}</div>
+
+      <div style={{marginTop:14, paddingTop:10, borderTop:"1px solid var(--hair)"}}>
+        <div style={{fontFamily:"var(--mono)", fontSize:10, letterSpacing:".12em", color:"var(--mut)", textTransform:"uppercase", marginBottom:4}}>Request fingerprint</div>
+        <div className="jm-kv"><span className="k">Customer</span><span className="v">{r.customer}</span></div>
+        <div className="jm-kv"><span className="k">Model</span><span className="v">{r.model}</span></div>
+        <div className="jm-kv"><span className="k">Region</span><span className="v">{r.region.toUpperCase()}</span></div>
+        <div className="jm-kv"><span className="k">Provider</span><span className="v">{r.provider}</span></div>
+        <div className="jm-kv"><span className="k">Tokens in</span><span className="v">{fmt(r.tokens_in)}</span></div>
+        <div className="jm-kv"><span className="k">Tokens out</span><span className="v">{fmt(r.tokens_out)}</span></div>
+        <div className="jm-kv"><span className="k">Latency</span><span className="v">{r.latency_ms==null ? "—" : r.latency_ms + " ms"}</span></div>
+        <div className="jm-kv"><span className="k">Billed</span><span className="v">SAR {r.cost_sar.toFixed(4)}</span></div>
+      </div>
+
+      {r.anomaly && (
+        <div style={{marginTop:14, paddingTop:10, borderTop:"1px solid var(--hair)"}}>
+          <div style={{fontFamily:"var(--mono)", fontSize:10, letterSpacing:".12em", color:"var(--amber)", textTransform:"uppercase", marginBottom:4}}>Anomaly</div>
+          <div style={{fontSize:12, color:"var(--ink)", lineHeight:1.5}}>{r.anomaly}</div>
+          <button className="ops-btn sm" style={{marginTop:10}}>Escalate to incident</button>
+        </div>
+      )}
+
+      <div style={{marginTop:14, paddingTop:10, borderTop:"1px solid var(--hair)"}}>
+        <div style={{fontFamily:"var(--mono)", fontSize:10, letterSpacing:".12em", color:"var(--mut)", textTransform:"uppercase", marginBottom:4}}>Routing trace</div>
+        <div className="jm-code">
+<span className="dim">14:22:04.118</span> <span className="k">intake</span> received from <span className="s">"{r.customer}"</span>{"\n"}
+<span className="dim">14:22:04.119</span> <span className="k">classify</span> pdpl=<span className="n">ok</span> content=<span className="n">clean</span>{"\n"}
+<span className="dim">14:22:04.120</span> <span className="k">route</span> model=<span className="s">"{r.model}"</span> region=<span className="s">"{r.region}"</span>{"\n"}
+<span className="dim">14:22:04.121</span> <span className="k">assign</span> provider=<span className="s">"{r.provider}"</span> slot=7{"\n"}
+<span className="dim">14:22:04.{String(Math.round(121 + (r.latency_ms||0))).padStart(3,'0')}</span> <span className="k">{status}</span> tokens_in=<span className="n">{r.tokens_in}</span> tokens_out=<span className="n">{r.tokens_out}</span>
+        </div>
+      </div>
+
+      <div style={{marginTop:12, display:"flex", gap:6, flexWrap:"wrap"}}>
+        <button className="ops-btn sm">Refund</button>
+        <button className="ops-btn sm">Ban route</button>
+        <button className="ops-btn sm primary">Open in audit</button>
+      </div>
+    </div>
+  );
+}
+
+function AnomalyTiles({ filter, onFilter }) {
+  const tiles = [
+    { k:"all", l:"All jobs · 1h", n:fmt(Math.round(89200)), kind:"" },
+    { k:"slow", l:"Slow (p95 breach)", n:A.anomalies_1h.slow, kind:"warn" },
+    { k:"retry", l:"Router retries", n:A.anomalies_1h.retry, kind:"warn" },
+    { k:"hold_overrun", l:"Hold overruns", n:A.anomalies_1h.hold_overrun, kind:"orange" },
+    { k:"blocked", l:"Policy-blocked", n:A.anomalies_1h.blocked, kind:"err" },
+    { k:"pdpl_hold", l:"PDPL-held", n:A.anomalies_1h.pdpl_hold, kind:"info" },
+  ];
+  return (
+    <div className="ops-grid c6" style={{marginBottom: 12}}>
+      {tiles.map(t => (
+        <div key={t.k} className={"jm-anomaly-tile " + (filter === t.k ? "on" : "")}
+             onClick={() => onFilter(t.k)}>
+          <div className={"n " + t.kind}>{t.n}</div>
+          <div className="l">{t.l}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function App() {
+  const [filter, setFilter] = useState("all");
+  const [paused, setPaused] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const liveRows = useJobStream();
+  const rows = paused ? A.jobs_stream : liveRows;
+  const filtered = filter === "all" ? rows : rows.filter(r => r.status === filter);
+
+  return (
+    <OpsShell current="jobs" crumb="Jobs Monitor" alarms={1} env="PROD" build={A.build}
+      topbarRight={
+        <button className="ops-tb-btn" onClick={() => setPaused(p=>!p)}>{paused ? "▶ Resume" : "⏸ Pause"}</button>
+      }>
+      <div className="ops-page">
+        <div className="ops-page-hd">
+          <div>
+            <div className="ops-page-eb">Ops · Live</div>
+            <h1 className="ops-page-h1">Jobs monitor · <em>platform-wide</em></h1>
+            <div className="ops-page-lede">
+              Every inference and batch request on the DCP platform, streamed in real time. Filter by anomaly, inspect the full routing trace of any job, and escalate to an incident with one click.
+            </div>
+          </div>
+          <div className="ops-page-actions">
+            <button className="ops-btn">Export last 1000</button>
+            <button className="ops-btn danger">Kill-switch</button>
+          </div>
+        </div>
+
+        <div className="ops-grid c4" style={{marginBottom: 12}}>
+          <ThroughputChart />
+          <div style={{gridColumn:"span 3"}}>
+            <AnomalyTiles filter={filter} onFilter={setFilter} />
+            <div className="ops-toolbar" style={{marginBottom:0}}>
+              <div className="ops-filters">
+                {STATUS_FILTERS.map(f => (
+                  <button key={f.k} className={"ops-filter " + (filter===f.k ? "on" : "")}
+                          onClick={() => setFilter(f.k)}>
+                    {f.l} <span className="ct">{f.k==="all" ? rows.length : rows.filter(r=>r.status===f.k).length}</span>
+                  </button>
+                ))}
+              </div>
+              <input className="ops-search" placeholder="customer / model / provider / job id…" />
+            </div>
+          </div>
+        </div>
+
+        <div style={{display:"grid", gridTemplateColumns:"1fr 360px", gap:12}}>
+          <div className="jm-stream">
+            <div className="jm-stream-hd">
+              <span>TS</span>
+              <span>JOB</span>
+              <span>CUSTOMER</span>
+              <span>MODEL</span>
+              <span>ROUTE</span>
+              <span>IN</span>
+              <span>OUT</span>
+              <span>LAT</span>
+              <span style={{textAlign:"end"}}>STATUS</span>
+            </div>
+            <div style={{maxHeight: "calc(100vh - 180px)", overflowY: "auto"}}>
+              {filtered.map((r,i) => (
+                <JobRow key={r.id+"-"+i} r={r} selected={selected?.id===r.id} onSelect={setSelected} />
+              ))}
+              {filtered.length === 0 && (
+                <div style={{padding:40, textAlign:"center", color:"var(--mut)", fontFamily:"var(--mono)", fontSize:12}}>
+                  No jobs match this filter in the current window.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <JobDetail r={selected} />
+        </div>
+      </div>
+    </OpsShell>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

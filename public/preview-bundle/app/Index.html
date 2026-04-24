@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-palette="midnight">
+<head>
+<meta charset="utf-8">
+<title>App surface — DCP</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/dcp-kit.css">
+<style>
+  html[data-palette="midnight"] body { background: var(--bg); }
+  body { margin: 0; font-family: var(--sans); color: var(--ink); }
+
+  /* ═══ HERO ═══════════════════════════════════════════════ */
+  .hero {
+    padding: 88px 64px 56px; max-width: 1280px; margin: 0 auto;
+    border-bottom: 1px solid var(--hair); position: relative;
+  }
+  .hero .eb { font-family: var(--mono); font-size: 11px; letter-spacing: .16em; color: var(--orange); text-transform: uppercase; }
+  .hero h1 { font-family: var(--serif); font-weight: 400; font-size: 108px; line-height: .96; color: var(--ink); margin: 20px 0 20px; letter-spacing: -.015em; }
+  .hero h1 em { color: var(--orange); font-style: italic; }
+  .hero .lede { color: var(--ink-2); font-size: 19px; line-height: 1.55; margin: 0 0 30px; max-width: 62ch; }
+
+  .meta {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 28px; padding-top: 22px;
+    border-top: 1px dashed var(--hair); margin-top: 34px;
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; color: var(--mut); text-transform: uppercase;
+  }
+  .meta b { color: var(--ink); font-weight: 500; display: block; margin-top: 6px; font-size: 13.5px; letter-spacing: .02em; text-transform: none; font-family: var(--sans); }
+
+  /* ═══ BATCH BLOCK HEADER ══════════════════════════════════ */
+  .batch-block {
+    max-width: 1280px; margin: 0 auto; padding: 64px 64px 20px;
+  }
+  .batch-hd {
+    display: grid; grid-template-columns: 120px 1fr auto; gap: 32px; align-items: baseline;
+    padding-bottom: 18px; margin-bottom: 32px; border-bottom: 1px solid var(--ink);
+  }
+  .batch-hd .num {
+    font-family: var(--serif); font-style: italic; font-size: 72px; line-height: .9; color: var(--orange);
+    letter-spacing: -.02em;
+  }
+  .batch-hd h2 {
+    font-family: var(--serif); font-weight: 400; font-size: 38px; color: var(--ink); margin: 0;
+    letter-spacing: -.005em;
+  }
+  .batch-hd h2 em { color: var(--orange); font-style: italic; }
+  .batch-hd .sub {
+    font-family: var(--mono); font-size: 10.5px; color: var(--mut); letter-spacing: .12em;
+    text-transform: uppercase; margin-top: 6px;
+  }
+  .batch-hd .count {
+    font-family: var(--mono); font-size: 11px; color: var(--ink); letter-spacing: .1em;
+    text-transform: uppercase; text-align: end;
+    padding: 10px 14px; border: 1px solid var(--ink);
+  }
+
+  /* ═══ CARD GRID ═══════════════════════════════════════════ */
+  .grid {
+    max-width: 1280px; margin: 0 auto; padding: 0 64px 32px;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;
+  }
+  @media (max-width: 1000px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 700px)  { .grid { grid-template-columns: 1fr; padding: 0 24px 32px; } .hero { padding: 48px 24px 32px; } .hero h1 { font-size: 56px; } .meta { grid-template-columns: 1fr 1fr; } .batch-block { padding: 48px 24px 16px; } .batch-hd { grid-template-columns: 60px 1fr; } .batch-hd .count { grid-column: 1 / -1; text-align: start; } .batch-hd .num { font-size: 44px; } }
+
+  .card {
+    background: var(--paper); border: 1px solid var(--hair);
+    display: flex; flex-direction: column; text-decoration: none; color: inherit;
+    transition: border-color .2s, transform .2s;
+    overflow: hidden; position: relative;
+  }
+  .card:hover { border-color: var(--ink); transform: translateY(-2px); }
+  .card:hover .go { color: var(--orange); }
+  .card:hover .go .arr { transform: translateX(4px); color: var(--orange); }
+
+  .card .prev {
+    height: 200px; background: var(--bg-2); position: relative; overflow: hidden;
+    border-bottom: 1px solid var(--hair);
+  }
+
+  /* ─── preview variants (compact) ──────────────────────── */
+  .prev.auth {
+    display: grid; place-items: center; background: #0a0b1a; color: #f5f3ee; padding: 16px;
+  }
+  .prev.auth .box { text-align: center; }
+  .prev.auth .m {
+    width: 34px; height: 34px; background: linear-gradient(135deg, #ee7a3c 0%, #b84510 100%);
+    margin: 0 auto 12px;
+  }
+  .prev.auth h3 {
+    font-family: var(--serif); font-weight: 400; font-style: italic; font-size: 26px; margin: 0;
+    color: #f5f3ee;
+  }
+  .prev.auth h3 em { color: #ee7a3c; }
+  .prev.auth .ln {
+    margin: 12px auto 0; width: 160px; height: 28px; border: 1px solid #272848; background: #161834;
+  }
+  .prev.auth .bt {
+    margin: 6px auto 0; width: 160px; height: 28px; background: #ee7a3c; color: #0a0b1a;
+    display: flex; align-items: center; justify-content: center; font-size: 10px;
+    font-family: 'JetBrains Mono', monospace; letter-spacing: .08em;
+  }
+
+  .prev.console {
+    background: var(--paper); display: grid; grid-template-columns: 48px 1fr; height: 100%;
+  }
+  .prev.console .sb {
+    background: var(--bg); border-inline-end: 1px solid var(--hair);
+    display: flex; flex-direction: column; gap: 4px; padding: 12px 8px;
+  }
+  .prev.console .sb .d { width: 22px; height: 3.5px; background: var(--hair); border-radius: 1px; }
+  .prev.console .sb .d.on { background: var(--orange); }
+  .prev.console .content { padding: 14px 16px; display: grid; gap: 8px; align-content: start; }
+  .prev.console .content .title { font-family: var(--serif); font-size: 17px; color: var(--ink); font-style: italic; }
+  .prev.console .content .title em { color: var(--orange); font-style: italic; }
+  .prev.console .content .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .prev.console .content .row .c {
+    background: var(--bg); border: 1px solid var(--hair); padding: 6px; min-height: 38px;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .prev.console .content .row .c .k { font-family: 'JetBrains Mono', monospace; font-size: 7.5px; color: var(--mut); letter-spacing: .06em; }
+  .prev.console .content .row .c .v { font-family: 'Instrument Serif', serif; font-size: 15px; color: var(--ink); }
+  .prev.console .content .bar {
+    height: 34px; background: var(--bg); border: 1px solid var(--hair); display: flex; align-items: flex-end; gap: 1px; padding: 3px;
+  }
+  .prev.console .content .bar span { flex: 1; background: var(--teal); }
+
+  .prev.settings {
+    background: var(--bg); display: grid; grid-template-rows: auto 1fr; padding: 14px 16px 0; gap: 8px;
+  }
+  .prev.settings h3 {
+    font-family: var(--serif); font-weight: 400; font-style: italic; font-size: 20px; color: var(--ink); margin: 0;
+  }
+  .prev.settings h3 em { color: var(--orange); }
+  .prev.settings .tabs {
+    display: flex; gap: 12px; font-family: 'JetBrains Mono', monospace; font-size: 8.5px;
+    letter-spacing: .1em; color: var(--mut); border-bottom: 1px solid var(--hair); padding: 5px 0 3px;
+  }
+  .prev.settings .tabs span.on { color: var(--ink); border-bottom: 2px solid var(--orange); margin-bottom: -4px; padding-bottom: 2px; }
+  .prev.settings .list { display: flex; flex-direction: column; gap: 4px; padding-top: 6px; }
+  .prev.settings .list .r {
+    display: grid; grid-template-columns: 18px 1fr 38px; gap: 8px; align-items: center;
+    padding: 5px 0; border-bottom: 1px solid var(--hair);
+  }
+  .prev.settings .list .r .av { width: 18px; height: 18px; background: var(--bg-2); color: var(--orange); font-family: 'Instrument Serif', serif; font-size: 10px; display: flex; align-items: center; justify-content: center; }
+  .prev.settings .list .r .n { font-size: 9px; color: var(--ink); }
+  .prev.settings .list .r .b {
+    font-family: 'JetBrains Mono', monospace; font-size: 7.5px; color: var(--orange);
+    background: color-mix(in oklab, var(--orange) 10%, transparent);
+    padding: 2px 4px; letter-spacing: .08em;
+  }
+
+  /* ─── Batch 3 previews ───────────────────────────────── */
+  .prev.playground {
+    background: var(--paper); display: grid; grid-template-rows: auto auto 1fr auto; gap: 8px; padding: 14px 16px;
+  }
+  .prev.playground .label { font-family: var(--mono); font-size: 8.5px; letter-spacing: .12em; color: var(--mut); text-transform: uppercase; }
+  .prev.playground .msg {
+    background: var(--bg-2); padding: 8px 10px; font-family: var(--mono); font-size: 9.5px; color: var(--ink-2);
+    border-inline-start: 2px solid var(--orange); line-height: 1.5;
+  }
+  .prev.playground .resp {
+    background: var(--bg); padding: 8px 10px; font-family: var(--mono); font-size: 9.5px; color: var(--ink); line-height: 1.55;
+    border-inline-start: 2px solid var(--teal);
+  }
+  .prev.playground .resp .cur { display: inline-block; width: 7px; height: 11px; background: var(--orange); vertical-align: -1px; animation: blink 1s infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .prev.playground .ctrls { display: flex; gap: 6px; }
+  .prev.playground .ctrls .chip { flex: 1; font-family: var(--mono); font-size: 8px; letter-spacing: .08em; text-align: center; padding: 4px 0; border: 1px solid var(--hair); color: var(--mut); }
+  .prev.playground .ctrls .chip.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+
+  .prev.models {
+    background: var(--paper); padding: 14px 16px; display: grid; gap: 8px; grid-template-rows: auto auto 1fr;
+  }
+  .prev.models .ttl { font-family: var(--serif); font-size: 22px; font-style: italic; color: var(--ink); margin: 0; }
+  .prev.models .ttl em { color: var(--orange); }
+  .prev.models .tags { display: flex; gap: 6px; flex-wrap: wrap; }
+  .prev.models .tags span { font-family: var(--mono); font-size: 8px; letter-spacing: .08em; padding: 3px 6px; border: 1px solid var(--hair); color: var(--mut); }
+  .prev.models .tags span.on { color: var(--orange); border-color: var(--orange); }
+  .prev.models .bench { display: flex; flex-direction: column; gap: 5px; margin-top: 4px; }
+  .prev.models .bench .r { display: grid; grid-template-columns: 70px 1fr 28px; gap: 8px; align-items: center; }
+  .prev.models .bench .r .n { font-family: var(--mono); font-size: 8px; color: var(--mut); letter-spacing: .04em; }
+  .prev.models .bench .r .track { height: 4px; background: var(--bg-2); position: relative; }
+  .prev.models .bench .r .track .f { position: absolute; inset: 0; right: auto; background: var(--orange); }
+  .prev.models .bench .r .v { font-family: var(--mono); font-size: 8px; color: var(--ink); text-align: end; }
+
+  .prev.jobs {
+    background: var(--bg); padding: 12px 14px; display: grid; gap: 6px; grid-template-rows: auto auto 1fr;
+  }
+  .prev.jobs .hd { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 8.5px; letter-spacing: .1em; color: var(--mut); text-transform: uppercase; padding-bottom: 4px; border-bottom: 1px solid var(--hair); }
+  .prev.jobs .hd .n { color: var(--ink); }
+  .prev.jobs .row {
+    display: grid; grid-template-columns: 14px 1fr 50px 44px; gap: 6px; align-items: center;
+    font-family: var(--mono); font-size: 9px; color: var(--ink-2); padding: 3px 0;
+  }
+  .prev.jobs .row .dot { width: 7px; height: 7px; background: var(--teal); border-radius: 50%; }
+  .prev.jobs .row .dot.r { background: var(--orange); animation: pulse 1.2s infinite; }
+  .prev.jobs .row .dot.e { background: var(--err); }
+  .prev.jobs .row .dot.q { background: var(--dim); }
+  @keyframes pulse { 50% { opacity: .4; } }
+  .prev.jobs .row .n { color: var(--ink); letter-spacing: .02em; }
+  .prev.jobs .row .s { color: var(--mut); text-align: end; }
+  .prev.jobs .row .p { text-align: end; }
+
+  .prev.audit {
+    background: var(--paper); padding: 14px 16px; display: grid; gap: 6px; grid-auto-rows: min-content;
+    font-family: var(--mono);
+  }
+  .prev.audit .day { font-size: 8px; color: var(--mut); letter-spacing: .1em; text-transform: uppercase; padding-bottom: 3px; border-bottom: 1px solid var(--hair); margin-bottom: 2px; }
+  .prev.audit .e { display: grid; grid-template-columns: 32px 1fr 44px; gap: 6px; font-size: 9px; color: var(--ink-2); align-items: center; padding: 2px 0; }
+  .prev.audit .e .t { color: var(--mut); letter-spacing: .02em; }
+  .prev.audit .e .a { color: var(--ink); letter-spacing: .02em; }
+  .prev.audit .e .sv { font-size: 7.5px; padding: 1px 4px; letter-spacing: .08em; text-align: center; }
+  .prev.audit .e .sv.w { background: color-mix(in oklab, var(--orange) 14%, transparent); color: var(--orange); }
+  .prev.audit .e .sv.i { background: var(--bg-2); color: var(--mut); }
+  .prev.audit .e .sv.er { background: color-mix(in oklab, var(--err) 14%, transparent); color: var(--err); }
+
+  .prev.usage {
+    background: var(--paper); padding: 14px 16px 12px; display: grid; grid-template-rows: auto 1fr auto; gap: 8px;
+  }
+  .prev.usage .sv {
+    position: relative; height: 100%; min-height: 74px;
+  }
+  .prev.usage .lbl { font-family: var(--mono); font-size: 8.5px; letter-spacing: .1em; color: var(--mut); text-transform: uppercase; display: flex; justify-content: space-between; }
+  .prev.usage .lbl .v { color: var(--ink); font-family: var(--serif); font-style: italic; font-size: 18px; letter-spacing: -.005em; }
+  .prev.usage .kpi { display: flex; gap: 14px; font-family: var(--mono); font-size: 8.5px; color: var(--mut); letter-spacing: .08em; border-top: 1px dashed var(--hair); padding-top: 8px; }
+  .prev.usage .kpi span strong { display: block; color: var(--ink); font-family: var(--serif); font-style: italic; font-weight: 400; font-size: 14px; margin-top: 2px; letter-spacing: 0; }
+
+  /* ═══ CARD BODY ═══════════════════════════════════════════ */
+  .card .body { padding: 22px 24px 22px; display: flex; flex-direction: column; flex: 1; }
+  .card .kb {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .14em; color: var(--mut);
+    text-transform: uppercase; margin-bottom: 8px;
+  }
+  .card h3 { font-family: var(--serif); font-weight: 400; font-size: 26px; color: var(--ink); margin: 0 0 8px; letter-spacing: -.005em; line-height: 1.1; }
+  .card h3 em { color: var(--orange); font-style: italic; }
+  .card p { color: var(--ink-2); font-size: 13.5px; line-height: 1.5; margin: 0 0 14px; }
+  .card .tags {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .04em; color: var(--mut);
+    display: flex; flex-wrap: wrap; gap: 5px 10px; margin-bottom: 16px;
+  }
+  .card .tags span::before { content: "§ "; color: var(--dim); }
+  .card .go {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; color: var(--ink);
+    text-transform: uppercase; margin-top: auto;
+    display: flex; justify-content: space-between; align-items: center;
+    padding-top: 14px; border-top: 1px dashed var(--hair);
+  }
+  .card .go .arr { transition: transform .2s, color .2s; }
+
+  /* ═══ FOOTER ═══════════════════════════════════════════ */
+  .foot {
+    border-top: 1px solid var(--hair); padding: 40px 64px; max-width: 1280px; margin: 48px auto 0;
+    display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 24px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: .08em; color: var(--mut);
+  }
+  .foot a {
+    color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--ink); padding-bottom: 2px;
+    margin-inline-end: 20px;
+  }
+  .foot a:hover { color: var(--orange); border-color: var(--orange); }
+
+</style>
+</head>
+<body>
+
+<!-- ═══ HERO ═══════════════════════════════════════════════ -->
+<section class="hero">
+  <div class="eb">§ APP SURFACE · BATCHES 02 + 03 · OF 03</div>
+  <h1>The logged-in <em>experience.</em></h1>
+  <p class="lede">
+    Everything behind the sign-in wall — auth, console, settings, plus the five operational surfaces a real team lives in: playground, model catalog, batch jobs, audit log, and usage analytics. One design kit, one data fabric, one palette.
+  </p>
+  <div class="meta">
+    <div>§ SCOPE<b>8 HTML files · 19 screens</b></div>
+    <div>§ DATA<b>data-app.js + data-ops.js</b></div>
+    <div>§ SHELL<b>AppSidebar + AppTopbar + AppFrame</b></div>
+    <div>§ PALETTE<b>Midnight · unified</b></div>
+  </div>
+</section>
+
+<!-- ═══ BATCH 02 ═══════════════════════════════════════════ -->
+<section class="batch-block">
+  <div class="batch-hd">
+    <div class="num">02</div>
+    <div>
+      <h2>Account &amp; <em>onboarding.</em></h2>
+      <div class="sub">§ BATCH 02 · AUTH · CONSOLE · SETTINGS</div>
+    </div>
+    <div class="count">3 FILES · 10 SCREENS</div>
+  </div>
+</section>
+
+<section class="grid">
+
+  <a class="card" href="./Auth.html">
+    <div class="prev auth">
+      <div class="box">
+        <div class="m"></div>
+        <h3>Start in <em>thirty</em> seconds.</h3>
+        <div class="ln"></div>
+        <div class="bt">CONTINUE · NAFATH</div>
+      </div>
+    </div>
+    <div class="body">
+      <div class="kb">§ FILE 01 · AUTH.HTML</div>
+      <h3>Authentication <em>— 4 variants</em></h3>
+      <p>Signup, sign-in, OTP verification, password recovery. All four sit on a design canvas as 640×860 artboards. Nafath is the default SSO.</p>
+      <div class="tags"><span>Signup</span><span>Login</span><span>OTP · 6-digit</span><span>Recover</span><span>Nafath</span></div>
+      <div class="go"><span>OPEN</span><span class="arr">→</span></div>
+    </div>
+  </a>
+
+  <a class="card" href="./Console.html">
+    <div class="prev console">
+      <div class="sb">
+        <div class="d on"></div><div class="d"></div><div class="d"></div>
+        <div class="d"></div><div class="d"></div><div class="d"></div>
+      </div>
+      <div class="content">
+        <div class="title">Good morning, <em>Faisal.</em></div>
+        <div class="row">
+          <div class="c"><span class="k">REQ</span><span class="v">412K</span></div>
+          <div class="c"><span class="k">SPEND</span><span class="v">14,821</span></div>
+          <div class="c"><span class="k">P95</span><span class="v">42ms</span></div>
+        </div>
+        <div class="bar">
+          <span style="height:30%"></span><span style="height:42%"></span><span style="height:38%"></span>
+          <span style="height:55%"></span><span style="height:62%"></span><span style="height:58%"></span>
+          <span style="height:70%"></span><span style="height:76%"></span><span style="height:68%"></span>
+          <span style="height:82%"></span><span style="height:88%"></span><span style="height:84%"></span>
+          <span style="height:92%"></span><span style="height:96%"></span>
+          <span style="height:100%; background:var(--orange)"></span>
+        </div>
+      </div>
+    </div>
+    <div class="body">
+      <div class="kb">§ FILE 02 · CONSOLE.HTML</div>
+      <h3>Console <em>— shell + home</em></h3>
+      <p>Sidebar with org switcher, topbar with ⌘K, and a dashboard laying out usage, budget, model spend, onboarding, and recent activity.</p>
+      <div class="tags"><span>Sidebar</span><span>Org switcher</span><span>Usage chart</span><span>Budget</span><span>Activity feed</span></div>
+      <div class="go"><span>OPEN</span><span class="arr">→</span></div>
+    </div>
+  </a>
+
+  <a class="card" href="./Settings.html">
+    <div class="prev settings">
+      <h3>Your <em>workspace.</em></h3>
+      <div class="tabs"><span class="on">§01 PROFILE</span><span>§02 TEAM</span><span>§03 BILLING</span><span>§04 KEYS</span></div>
+      <div class="list">
+        <div class="r"><span class="av">F</span><span class="n">Faisal Al-Qahtani</span><span class="b">OWNER</span></div>
+        <div class="r"><span class="av">L</span><span class="n">Lina Al-Otaibi</span><span class="b">ADMIN</span></div>
+        <div class="r"><span class="av">K</span><span class="n">Khaled Al-Harbi</span><span class="b">DEV</span></div>
+      </div>
+    </div>
+    <div class="body">
+      <div class="kb">§ FILE 03 · SETTINGS.HTML</div>
+      <h3>Settings <em>— 4 tabs</em></h3>
+      <p>Profile with Nafath identity, team with role matrix, billing with SAR invoices &amp; ZATCA, API keys with IP allow-list. One surface, four facets.</p>
+      <div class="tags"><span>Profile</span><span>Team</span><span>Billing · SAR</span><span>API keys</span><span>Danger zone</span></div>
+      <div class="go"><span>OPEN</span><span class="arr">→</span></div>
+    </div>
+  </a>
+
+</section>
+
+<!-- ═══ BATCH 03 ═══════════════════════════════════════════ -->
+<section class="batch-block">
+  <div class="batch-hd">
+    <div class="num">03</div>
+    <div>
+      <h2>Where the team actually <em>works.</em></h2>
+      <div class="sub">§ BATCH 03 · PLAYGROUND · MODELS · JOBS · AUDIT · USAGE</div>
+    </div>
+    <div class="count">5 FILES · 9 SCREENS</div>
+  </div>
+</section>
+
+<section class="grid">
+
+  <a class="card" href="./Playground.html">
+    <div class="prev playground">
+      <div class="label">§ PROMPT · ALLaM-7B</div>
+      <div class="msg">اشرح مفهوم الذكاء الاصطناعي التوليدي في جملتين</div>
+      <div class="resp">الذكاء الاصطناعي التوليدي هو فرع من التعلم<br/>الآلي يُنتج محتوى جديداً مثل النص والصور<span class="cur"></span></div>
+      <div class="ctrls"><span class="chip on">CHAT</span><span class="chip">COMPLETE</span><span class="chip">TOOLS</span></div>
+    </div>
+    <div class="body">
+      <div class="kb">§ FILE 04 · PLAYGROUND.HTML</div>
+      <h3>Playground <em>— prompt, stream, tune</em></h3>
+      <p>A three-column workbench: model picker, token-streaming conversation, parameter rail with temp / top-p / max-tokens. Saves to presets. Arabic and English side-by-side.</p>
+      <div class="tags"><span>Stream SSE</span><span>Params</span><span>Presets</span><span>Arabic + EN</span><span>Copy curl</span></div>
+      <div class="go"><span>OPEN</span><span class="arr">→</span></div>
+    </div>
+  </a>
+
+  <a class="card" href="./Models.html">
+    <div class="prev models">
+      <div class="ttl">ALLaM · <em>7B</em></div>
+      <div class="tags"><span class="on">ARABIC-NATIVE</span><span>SOVEREIGN</span><span>32K CTX</span></div>
+      <div class="bench">
+        <div class="r"><span class="n">ArabicMMLU</span><span class="track"><span class="f" style="width:82%"></span></span><span class="v">72.4</span></div>
+        <div class="r"><span class="n">TyDi · ar</span><span class="track"><span class="f" style="width:91%"></span></span><span class="v">81.2</span></div>
+        <div class="r"><span class="n">ALGHAFA</span><span class="track"><span class="f" style="width:87%"></span></span><span class="v">77.1</span></div>
+        <div class="r"><span class="n">MGSM · ar</span><span class="track"><span class="f" style="width:66%"></span></span><span class="v">58.9</span></div>
+      </div>
+    </div>
+    <div class="body">
+      <div class="kb">§ FILE 05 · MODELS.HTML</div>
+      <h3>Model catalog <em>— + detail</em></h3>
+      <p>Grid of inference + embedding models with specs, pricing, and the ALLaM detail page: benchmarks vs GPT-4o, latency, sample prompts, pricing calc.</p>
+      <div class="tags"><span>5 models</span><span>Benchmarks</span><span>SAR pricing</span><span>Try-it</span><span>Sovereign</span></div>
+      <div class="go"><span>OPEN</span><span class="arr">→</span></div>
+    </div>
+  </a>
+
+  <a class="card" href="./Jobs.html">
+    <div class="prev jobs">
+      <div class="hd"><span>§ BATCH JOBS</span><span class="n">14 ACTIVE</span></div>
+      <div class="row"><span class="dot r"></span><span class="n">product-embed-catalog-q2</span><span class="s">78%</span><span class="p">RUN</span></div>
+      <div class="row"><span class="dot"></span><span class="n">review-sentiment-nightly</span><span class="s">100%</span><span class="p">DONE</span></div>
+      <div class="row"><span class="dot q"></span><span class="n">support-ticket-triage</span><span class="s">queued</span><span class="p">QUE</span></div>
+      <div class="row"><span class="dot e"></span><span class="n">ar-translation-legacy</span><span class="s">42%</span><span class="p">ERR</span></div>
+      <div class="row"><span class="dot"></span><span class="n">finance-report-summariser</span><span class="s">100%</span><span class="p">DONE</span></div>
+    </div>
+    <div class="body">
+      <div class="kb">§ FILE 06 · JOBS.HTML</div>
+      <h3>Batch jobs <em>— queue + detail</em></h3>
+      <p>Split-view queue: filter by status / model / author; inline live progress, ETA, throughput chart, and a per-job side panel with inputs, outputs, and failure breakdown.</p>
+      <div class="tags"><span>Live progress</span><span>Filters</span><span>Retry</span><span>Sample output</span><span>Cost preview</span></div>
+      <div class="go"><span>OPEN</span><span class="arr">→</span></div>
+    </div>
+  </a>
+
+  <a class="card" href="./Audit.html">
+    <div class="prev audit">
+      <div class="day">§ TODAY · 22 APR 2026</div>
+      <div class="e"><span class="t">14:22</span><span class="a">key.rotate</span><span class="sv w">WARN</span></div>
+      <div class="e"><span class="t">13:48</span><span class="a">inference.call</span><span class="sv i">INFO</span></div>
+      <div class="e"><span class="t">13:02</span><span class="a">budget.alert</span><span class="sv w">WARN</span></div>
+      <div class="day" style="margin-top:4px">§ YESTERDAY</div>
+      <div class="e"><span class="t">17:41</span><span class="a">ratelimit.hit</span><span class="sv er">ERR</span></div>
+      <div class="e"><span class="t">09:15</span><span class="a">team.invite</span><span class="sv i">INFO</span></div>
+    </div>
+    <div class="body">
+      <div class="kb">§ FILE 07 · AUDIT.HTML</div>
+      <h3>Audit log <em>— every action</em></h3>
+      <p>Tamper-evident event stream grouped by day. Filter by actor, severity, action category. Expand any row for full JSON payload. CSV / JSON / SIEM stream.</p>
+      <div class="tags"><span>13-mo retention</span><span>Filters</span><span>JSON payload</span><span>CSV export</span><span>SIEM</span></div>
+      <div class="go"><span>OPEN</span><span class="arr">→</span></div>
+    </div>
+  </a>
+
+  <a class="card" href="./Usage.html">
+    <div class="prev usage">
+      <div class="lbl"><span>§ 30 DAYS · REQ</span><span class="v">18,444</span></div>
+      <div class="sv">
+        <svg viewBox="0 0 300 80" preserveAspectRatio="none" style="width:100%; height:100%; display:block;">
+          <path d="M0,62 L0,60 L10,57 L20,54 L30,50 L40,48 L50,50 L60,52 L70,46 L80,42 L90,38 L100,35 L110,34 L120,37 L130,40 L140,38 L150,34 L160,30 L170,26 L180,22 L190,18 L200,20 L210,22 L220,18 L230,14 L240,10 L250,8 L260,6 L270,8 L280,6 L290,4 L300,6 L300,80 L0,80 Z" fill="var(--orange)" fill-opacity=".85" />
+          <path d="M0,70 L10,68 L20,66 L30,63 L40,61 L50,62 L60,64 L70,60 L80,57 L90,54 L100,52 L110,51 L120,53 L130,55 L140,54 L150,51 L160,48 L170,45 L180,42 L190,39 L200,40 L210,41 L220,38 L230,35 L240,32 L250,30 L260,28 L270,30 L280,28 L290,26 L300,27 L300,80 L0,80 Z" fill="var(--teal)" fill-opacity=".85" />
+          <path d="M0,76 L10,75 L20,74 L30,73 L40,72 L50,73 L60,74 L70,72 L80,71 L90,70 L100,69 L110,69 L120,70 L130,71 L140,70 L150,69 L160,68 L170,66 L180,64 L190,62 L200,63 L210,64 L220,63 L230,62 L240,61 L250,60 L260,59 L270,60 L280,60 L290,59 L300,59 L300,80 L0,80 Z" fill="var(--ink)" fill-opacity=".7" />
+        </svg>
+      </div>
+      <div class="kpi">
+        <span>SPEND<strong>SAR 243</strong></span>
+        <span>P95<strong>42 ms</strong></span>
+        <span>PACE<strong>73%</strong></span>
+      </div>
+    </div>
+    <div class="body">
+      <div class="kb">§ FILE 08 · USAGE.HTML</div>
+      <h3>Usage analytics <em>— drilldown</em></h3>
+      <p>Stacked area chart by model, breakdowns by API key, a 7×24 hour-of-day heatmap, and a budget-pacing meter with month-end projection. The numbers behind the dashboard.</p>
+      <div class="tags"><span>Stacked area</span><span>By model / key</span><span>Heatmap</span><span>Budget pacing</span><span>CSV export</span></div>
+      <div class="go"><span>OPEN</span><span class="arr">→</span></div>
+    </div>
+  </a>
+
+</section>
+
+<!-- ═══ FOOTER ═══════════════════════════════════════════ -->
+<footer class="foot">
+  <div>
+    <a href="../DCP Redesign.html">← Landing</a>
+    <a href="../public/Index.html">← Batch 1 · Public</a>
+    <a href="../docs/DCP Docs.html">Docs</a>
+    <a href="../DCP Kit.html">Design kit</a>
+  </div>
+  <div>§ DCP · RIYADH · APR 2026</div>
+</footer>
+
+<script src="../assets/app-polish.js?v=3"></script>
+</body>
+</html>

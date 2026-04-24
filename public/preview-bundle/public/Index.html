@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<title>Batch 1 — Public Pages · DCP</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #faf7f2;
+    --bg: #fdfbf7;
+    --bg-2: #f4efe6;
+    --ink: #0d0d0d;
+    --ink-2: #2a2a2a;
+    --mut: #6b6b6b;
+    --hair: #e8dfd0;
+    --line: #d0c4ae;
+    --orange: #d9541f;
+    --teal: #0d7a6b;
+    --serif: "Instrument Serif", serif;
+    --sans: "Inter", sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.55; }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 0 48px; }
+
+  /* header */
+  .idx-hero { padding: 96px 0 72px; border-bottom: 1px solid var(--hair); background: var(--paper); }
+  .idx-hero .eb { font-family: var(--mono); font-size: 11px; letter-spacing: .16em; color: var(--mut); text-transform: uppercase; }
+  .idx-hero h1 {
+    font-family: var(--serif); font-weight: 400; letter-spacing: -0.02em;
+    font-size: clamp(56px, 8vw, 110px); line-height: 0.98;
+    margin: 22px 0 20px; max-width: 18ch;
+  }
+  .idx-hero h1 em { color: var(--orange); font-style: italic; }
+  .idx-hero p.lead { font-family: var(--serif); font-size: 24px; line-height: 1.45; color: var(--ink-2); max-width: 58ch; margin: 0; }
+
+  .hd-meta {
+    display: flex; gap: 48px; margin-top: 48px; padding-top: 32px; border-top: 1px dashed var(--hair);
+    font-family: var(--mono); font-size: 11px; letter-spacing: .12em; color: var(--mut);
+  }
+  .hd-meta .k { color: var(--ink); margin-inline-end: 8px; }
+
+  /* section headers */
+  .sec-hd {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 80px 0 24px; border-bottom: 1px solid var(--hair);
+    font-family: var(--mono); font-size: 11px; letter-spacing: .14em; color: var(--mut); text-transform: uppercase;
+  }
+  .sec-hd h2 {
+    font-family: var(--serif); font-weight: 400; font-style: italic;
+    font-size: 46px; color: var(--ink); margin: 0; letter-spacing: -.01em; text-transform: none;
+  }
+
+  /* cards */
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border-bottom: 1px solid var(--hair); }
+  .grid.two { grid-template-columns: repeat(2, 1fr); }
+  .card {
+    padding: 40px 40px 44px; border-inline-end: 1px solid var(--hair); background: var(--bg);
+    display: flex; flex-direction: column; min-height: 340px; position: relative;
+    transition: background 140ms ease;
+  }
+  .card:last-child { border-inline-end: none; }
+  .card:hover { background: var(--paper); }
+  .card .tag { font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em; color: var(--orange); text-transform: uppercase; }
+  .card h3 {
+    font-family: var(--serif); font-weight: 400; font-size: 44px; line-height: 1.02;
+    color: var(--ink); margin: 12px 0 14px; letter-spacing: -.01em;
+  }
+  .card p  { color: var(--ink-2); font-size: 15px; line-height: 1.55; margin: 0 0 auto; max-width: 34ch; }
+  .card .sub { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; color: var(--mut); margin-top: 24px; padding-top: 16px; border-top: 1px dashed var(--hair); }
+  .card a.cta {
+    display: inline-flex; align-items: center; gap: 8px; margin-top: 20px;
+    color: var(--ink); text-decoration: none; font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
+    border-bottom: 1px solid var(--ink); padding-bottom: 4px; align-self: flex-start;
+  }
+  .card a.cta:hover { color: var(--orange); border-bottom-color: var(--orange); }
+
+  /* status card special */
+  .card.status-card { border-inline-start: 4px solid var(--teal); padding-inline-start: 36px; }
+
+  /* file list */
+  .files { padding: 40px 0 96px; }
+  .files .hd { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; color: var(--mut); text-transform: uppercase; padding-bottom: 14px; border-bottom: 1px solid var(--hair); }
+  .files ul { list-style: none; padding: 0; margin: 0; }
+  .files li { display: grid; grid-template-columns: 200px 1fr auto; gap: 24px; padding: 14px 0; border-bottom: 1px dashed var(--hair); font-family: var(--mono); font-size: 13px; }
+  .files li .t { color: var(--mut); }
+  .files li .n { color: var(--ink); }
+  .files li .s { color: var(--orange); font-size: 10.5px; letter-spacing: .12em; }
+
+  @media (max-width: 1000px) {
+    .grid, .grid.two { grid-template-columns: 1fr; }
+    .card { border-inline-end: none; border-bottom: 1px solid var(--hair); }
+  }
+
+  footer { border-top: 1px solid var(--hair); padding: 40px 0 80px; font-family: var(--mono); font-size: 11px; letter-spacing: .1em; color: var(--mut); }
+  footer .wrap { display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+
+<section class="idx-hero">
+  <div class="wrap">
+    <div class="eb">§ BATCH 01 · PUBLIC PAGES · SHIPPED</div>
+    <h1>Five public screens, <em>one system.</em></h1>
+    <p class="lead">
+      Pricing, Providers, Status, About, Contact — all built on the shared DCP design kit. Every page pulls from the same data source, shares the same nav + footer, and inherits the editorial palette.
+    </p>
+    <div class="hd-meta">
+      <span><span class="k">KIT</span>DCP DESIGN SYSTEM · V1</span>
+      <span><span class="k">SHELL</span>_shell.jsx · SHARED</span>
+      <span><span class="k">DATA</span>data-public.js</span>
+      <span><span class="k">PAGES</span>5 HTML · 5 JSX</span>
+    </div>
+  </div>
+</section>
+
+<div class="wrap">
+
+  <div class="sec-hd">
+    <h2>The pages.</h2>
+    <span>§ CLICK TO OPEN</span>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <span class="tag">§ 01 · COMMERCE</span>
+      <h3>Pricing</h3>
+      <p>Interactive workload calculator, model matrix, GPU marketplace rates, enterprise tiers, competitor comparison.</p>
+      <div class="sub">ON-DEMAND · RESERVED · SPOT · ENTERPRISE</div>
+      <a class="cta" href="./Pricing.html">Open pricing →</a>
+    </div>
+    <div class="card">
+      <span class="tag">§ 02 · SUPPLY SIDE</span>
+      <h3>Providers</h3>
+      <p>Earnings table, KSA demand heatmap, 5-step onboarding, payout calculator, provider agent download.</p>
+      <div class="sub">82% REVENUE SHARE · MONTHLY SAR PAYOUT</div>
+      <a class="cta" href="./Providers.html">Open providers →</a>
+    </div>
+    <div class="card status-card">
+      <span class="tag">§ 03 · OPERATIONAL</span>
+      <h3>Status</h3>
+      <p>Live region health, service uptime, 90-day history strip, incident timeline, multi-channel subscribe.</p>
+      <div class="sub">● OPERATIONAL · UPDATED EVERY 60S</div>
+      <a class="cta" href="./Status.html">Open status →</a>
+    </div>
+  </div>
+
+  <div class="grid two">
+    <div class="card">
+      <span class="tag">§ 04 · STORY</span>
+      <h3>About</h3>
+      <p>Manifesto, four-year timeline, key numbers, team cards with initials, Saudi-led investor wall.</p>
+      <div class="sub">42 PROVIDERS · 346 GPUS · 18.2M SAR</div>
+      <a class="cta" href="./About.html">Open about →</a>
+    </div>
+    <div class="card">
+      <span class="tag">§ 05 · INBOUND</span>
+      <h3>Contact</h3>
+      <p>Four direct channels with copy-to-clipboard, HQ card with CR + VAT, reason-tagged form, three-office strip.</p>
+      <div class="sub">SALES · SUPPORT · SECURITY · PRESS</div>
+      <a class="cta" href="./Contact.html">Open contact →</a>
+    </div>
+  </div>
+
+  <div class="sec-hd" style="border-bottom:none; padding-bottom:0;">
+    <h2>Files shipped.</h2>
+    <span>§ 11 FILES · 1 DIR</span>
+  </div>
+
+  <div class="files">
+    <div class="hd" style="display:grid; grid-template-columns: 200px 1fr auto; gap: 24px;">
+      <span>TYPE</span>
+      <span>FILE</span>
+      <span>SIZE</span>
+    </div>
+    <ul>
+      <li><span class="t">HTML · SHELL</span><span class="n">public/Pricing.html</span>    <span class="s">EDITORIAL</span></li>
+      <li><span class="t">JSX  · PAGE</span>  <span class="n">public/Pricing.jsx</span>     <span class="s">20 KB</span></li>
+      <li><span class="t">HTML · SHELL</span><span class="n">public/Providers.html</span>  <span class="s">EDITORIAL</span></li>
+      <li><span class="t">JSX  · PAGE</span>  <span class="n">public/Providers.jsx</span>   <span class="s">18 KB</span></li>
+      <li><span class="t">HTML · SHELL</span><span class="n">public/Status.html</span>     <span class="s">EDITORIAL</span></li>
+      <li><span class="t">JSX  · PAGE</span>  <span class="n">public/Status.jsx</span>      <span class="s">9 KB</span></li>
+      <li><span class="t">HTML · SHELL</span><span class="n">public/About.html</span>      <span class="s">EDITORIAL</span></li>
+      <li><span class="t">JSX  · PAGE</span>  <span class="n">public/About.jsx</span>       <span class="s">6 KB</span></li>
+      <li><span class="t">HTML · SHELL</span><span class="n">public/Contact.html</span>    <span class="s">EDITORIAL</span></li>
+      <li><span class="t">JSX  · PAGE</span>  <span class="n">public/Contact.jsx</span>     <span class="s">7 KB</span></li>
+      <li><span class="t">JSX  · SHARED</span><span class="n">public/_shell.jsx</span>     <span class="s">NAV + FOOTER</span></li>
+      <li><span class="t">DATA</span>         <span class="n">assets/data-public.js</span> <span class="s">5 NAMESPACES</span></li>
+    </ul>
+  </div>
+
+</div>
+
+<footer>
+  <div class="wrap">
+    <span>§ DCP · BATCH 01 · PUBLIC PAGES</span>
+    <span>NEXT · BATCH 02 · AUTH / CONSOLE / SETTINGS</span>
+  </div>
+</footer>
+
+</body>
+</html>

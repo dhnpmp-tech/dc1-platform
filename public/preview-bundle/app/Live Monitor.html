@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-palette="midnight">
+<head>
+<meta charset="utf-8">
+<title>Live Monitor — DCP</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/dcp-kit.css">
+<link rel="stylesheet" href="../assets/app-shell.css">
+<link rel="stylesheet" href="../assets/app-i18n-rtl.css">
+<style>
+  .main-scroll { grid-area: main; overflow-y: auto; padding: 32px 40px 60px; }
+  .lm-head { display:grid; grid-template-columns:1fr auto; gap:24px; align-items:baseline; padding-bottom:20px; border-bottom:1px solid var(--hair); margin-bottom:28px; }
+  .lm-eb { font-family:var(--mono); font-size:11px; letter-spacing:.16em; color:var(--teal); text-transform:uppercase; }
+  .lm-h1 { font-family:var(--serif); font-weight:400; font-size:56px; line-height:1.12; margin:10px 0 14px; letter-spacing:-.005em; padding-bottom:4px; }
+  .lm-h1 em { color:var(--orange); font-style:italic; }
+  .lm-lede { color:var(--ink-2); font-size:15px; max-width:64ch; line-height:1.55; }
+
+  .lm-kpi { display:grid; grid-template-columns:repeat(4,1fr); gap:0; border:1px solid var(--hair); background:var(--paper); margin-bottom:24px; }
+  .lm-kpi .s { padding:20px 22px; border-inline-end: 1px solid var(--hair); }
+  .lm-kpi .s:last-child { border-inline-end: 0; }
+  .lm-kpi .k { font-family:var(--mono); font-size:10.5px; letter-spacing:.12em; color:var(--mut); text-transform:uppercase; }
+  .lm-kpi .v { font-family:var(--serif); font-size:38px; line-height:1.12; padding-bottom:4px; margin-top:6px; }
+  .lm-kpi .v em { color:var(--orange); font-style:italic; }
+
+  .lm-card { background:var(--paper); border:1px solid var(--hair); padding:20px; }
+  .lm-card-hd { display:flex; justify-content:space-between; align-items:baseline; padding-bottom:12px; border-bottom:1px dashed var(--hair); margin-bottom:14px; }
+  .lm-card-t { font-family:var(--serif); font-size:22px; }
+
+  .job-row { display:grid; grid-template-columns:auto 1fr auto auto; gap:14px; align-items:center; padding:16px; border:1px solid var(--hair); background:var(--bg-2); margin-bottom:10px; }
+  .job-row.streaming { border-inline-start: 3px solid var(--teal); }
+  .job-row.queued { border-inline-start: 3px solid var(--mut); }
+  .job-id { font-family:var(--mono); font-size:11px; color:var(--mut); }
+  .job-model { font-family:var(--serif); font-size:20px; color:var(--ink); }
+  .job-meta { font-family:var(--mono); font-size:11px; color:var(--mut); margin-top:3px; letter-spacing:.02em; }
+  .job-progress { width:180px; }
+  .lm-pb { width:100%; height:6px; background:var(--hair); position:relative; }
+  .lm-pb-f { position:absolute; inset:0 auto 0 0; background:var(--teal); transition:width .3s; }
+  .job-cost { text-align:end; font-family:var(--serif); font-style:italic; font-size:22px; color:var(--orange); }
+  .job-cost .sub { display:block; font-family:var(--mono); font-size:10.5px; color:var(--mut); font-style:normal; letter-spacing:.04em; margin-top:2px; }
+  .chip-live { font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; padding:3px 8px; color:var(--teal); border:1px solid var(--teal); }
+  .chip-live.queued { color:var(--mut); border-color:var(--hair); }
+  .chip-live.streaming::before { content:"●"; margin-inline-end:4px; animation:p 1.6s ease-in-out infinite; }
+  @keyframes p { 50% { opacity:.3; } }
+
+  .token-bar { display:flex; gap:2px; margin-top:10px; height:14px; align-items:end; }
+  .token-bar span { flex:1; background:var(--teal); }
+
+  /* Throughput sparkline */
+  .tp-card { display:grid; grid-template-columns:1.2fr 1fr; gap:20px; margin-top:20px; }
+  .tp-chart { display:grid; grid-template-columns:repeat(40,1fr); gap:2px; align-items:end; height:80px; }
+  .tp-chart span { background:var(--teal); min-height:2px; }
+  .tp-chart span:last-child { background:var(--orange); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../assets/data-app.js"></script>
+<script src="../assets/i18n.js?v=2"></script>
+<script src="../assets/data-renter.js"></script>
+<script type="text/babel" src="../assets/dcp-kit.jsx"></script>
+<script type="text/babel" src="../assets/app-shell.jsx"></script>
+<script type="text/babel">
+const { useState, useEffect } = React;
+const D = window.DCP_RENTER;
+
+function Mon() {
+  const [lang] = window.useLang();
+  const t = (k, fb) => window.T(lang, "lm."+k, fb);
+  const com = (k, fb) => window.T(lang, "common."+k, fb);
+  const [jobs, setJobs] = useState(D.liveJobs);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => {
+      setTick(x => x+1);
+      setJobs(js => js.map(j => {
+        if (j.status === "streaming") {
+          const inc = 80 + Math.random()*60;
+          const newTok = j.tokens + inc;
+          const newSec = j.elapsed + 0.8;
+          return { ...j, tokens: Math.round(newTok), elapsed: +newSec.toFixed(1), sarActual: +(j.sarActual + 0.008).toFixed(3) };
+        }
+        if (j.status === "queued" && Math.random() < 0.1) return { ...j, status:"streaming" };
+        return j;
+      }));
+    }, 800);
+    return () => clearInterval(t);
+  }, []);
+
+  const streaming = jobs.filter(j=>j.status==="streaming");
+  const totalHolds = jobs.reduce((a,j)=>a+j.sarHold,0);
+  const totalActual = jobs.reduce((a,j)=>a+j.sarActual,0);
+  const tokRate = Math.round(streaming.reduce((a,j)=>a+j.tokens/Math.max(j.elapsed,.1),0));
+
+  // 40-bin throughput sparkline pseudo-data
+  const bins = Array.from({length:40}, (_,i) => 40 + Math.sin((i+tick)/3)*20 + Math.random()*15);
+
+  return (
+    <window.AppFrame current="jobs" crumb={lang==="ar"?"المراقب المباشر":"Live monitor"} topbarRight={<a href="./Jobs.html" className="btn ghost sm">{lang==="ar"?"← المهام الدُفعية":"← Batch jobs"}</a>}>
+      <div className="main-scroll">
+        <div className="lm-head">
+          <div>
+            <div className="lm-eb">{t("eb")}</div>
+            <h1 className="lm-h1">{t("h1_a")} <em>{streaming.length} {t("h1_b")}</em></h1>
+            <div className="lm-lede">{t("lede")}</div>
+          </div>
+          <div style={{display:"flex", gap:8}}>
+            <button className="btn ghost sm">{t("pause")}</button>
+            <button className="btn sm" style={{borderColor:"var(--red,#e66)", color:"var(--red,#e66)"}}>{t("cancel_all")}</button>
+          </div>
+        </div>
+
+        <div className="lm-kpi">
+          <div className="s"><div className="k">{t("k_active")}</div><div className="v"><em>{streaming.length}</em></div></div>
+          <div className="s"><div className="k">{t("k_queued")}</div><div className="v"><em>{jobs.filter(j=>j.status==="queued").length}</em></div></div>
+          <div className="s"><div className="k">{t("k_tps")}</div><div className="v">{tokRate}</div></div>
+          <div className="s"><div className="k">{t("k_spend")}</div><div className="v"><em>SAR {totalActual.toFixed(2)}</em><span style={{fontFamily:"var(--mono)", fontSize:12, color:"var(--mut)", marginInlineStart:8, fontStyle:"normal"}}>/ SAR {totalHolds.toFixed(2)} {t("held_suffix")}</span></div></div>
+        </div>
+
+        <div className="lm-card" style={{marginBottom:20}}>
+          <div className="lm-card-hd">
+            <div className="lm-card-t">{t("active_jobs")}</div>
+            <div className="lm-eb" style={{color:"var(--mut)"}}>{jobs.length} {t("total")} · {t("updating")}</div>
+          </div>
+          {jobs.map(j => (
+            <div key={j.id} className={"job-row " + j.status}>
+              <div>
+                <span className={"chip-live " + j.status}>{com(j.status, j.status)}</span>
+              </div>
+              <div>
+                <div className="job-model">{j.model} <span style={{fontFamily:"var(--mono)", fontSize:12, color:"var(--mut)"}}>· {j.rig}</span></div>
+                <div className="job-meta">{j.id} · {j.provider} · {j.region} · {j.tokens.toLocaleString()} tok · {j.elapsed.toFixed(1)}s</div>
+                {j.status==="streaming" && (
+                  <div className="token-bar">{Array.from({length:40}, (_,i)=><span key={i} style={{height: (30+Math.sin((i+tick+j.tokens/50))*20+Math.random()*25)+"%"}}/>)}</div>
+                )}
+              </div>
+              <div className="job-progress">
+                <div className="lm-pb"><div className="lm-pb-f" style={{width: Math.min(100, (j.elapsed/j.est)*100)+"%"}}/></div>
+                <div style={{fontFamily:"var(--mono)", fontSize:10.5, color:"var(--mut)", marginTop:4, letterSpacing:".08em", textAlign:"end"}}>{j.elapsed.toFixed(1)}s / ~{j.est}s est</div>
+              </div>
+              <div className="job-cost">
+                SAR {j.sarActual.toFixed(3)}
+                <span className="sub">{com("of","of")} SAR {j.sarHold.toFixed(2)} {t("held_suffix")}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="tp-card">
+          <div className="lm-card">
+            <div className="lm-card-hd"><div className="lm-card-t">{t("throughput")}</div><div className="lm-eb" style={{color:"var(--teal)"}}>● {com("live","live")}</div></div>
+            <div className="tp-chart">
+              {bins.map((v,i) => <span key={i} style={{height: Math.max(4, v) + "%"}}/>)}
+            </div>
+            <div style={{display:"flex", justifyContent:"space-between", marginTop:8, fontFamily:"var(--mono)", fontSize:10.5, color:"var(--mut)", letterSpacing:".08em"}}>
+              <span>-40s</span><span>-20s</span><span>{t("now")}</span>
+            </div>
+          </div>
+
+          <div className="lm-card">
+            <div className="lm-card-hd"><div className="lm-card-t">{t("regions")}</div></div>
+            <div style={{display:"grid", gap:10}}>
+              {[["Riyadh","الرياض"],["Jeddah","جدة"],["Dammam","الدمام"]].map(([r,ar]) => {
+                const cnt = jobs.filter(j=>j.region===r).length;
+                return (
+                  <div key={r} style={{display:"grid", gridTemplateColumns:"1fr auto", padding:"10px 0", borderTop:"1px dashed var(--hair)"}}>
+                    <div>
+                      <div style={{fontWeight:500}}>{lang==="ar"?ar:r}</div>
+                      <div style={{fontFamily:"var(--mono)", fontSize:10.5, color:"var(--mut)", letterSpacing:".06em", marginTop:3}}>{cnt} {t("active_short")}</div>
+                    </div>
+                    <div style={{fontFamily:"var(--serif)", fontStyle:"italic", fontSize:22, color: cnt ? "var(--teal)" : "var(--mut)"}}>{cnt}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    </window.AppFrame>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<Mon />);
+</script>
+<script src="../assets/app-polish.js"></script>
+</body>
+</html>

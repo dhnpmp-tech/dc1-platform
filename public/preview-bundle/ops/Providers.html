@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>DCP Ops — Providers</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../assets/dcp-kit.css" />
+<link rel="stylesheet" href="../assets/ops-shell.css" />
+
+<style>
+.kyb-card { background: var(--paper); border: 1px solid var(--hair); padding: 16px; cursor: pointer; transition: border-color .15s, transform .15s; }
+.kyb-card:hover { border-color: var(--accent); }
+.kyb-card.sel { border-color: var(--accent); background: color-mix(in oklab, var(--accent) 6%, var(--paper)); }
+.kyb-doc { display: grid; grid-template-columns: 1fr auto; align-items: center; padding: 4px 0; font-family: var(--mono); font-size: 11px; }
+.kyb-doc .k { color: var(--mut); text-transform: uppercase; letter-spacing: .08em; font-size: 10px; }
+.kyb-doc .v.ok { color: var(--green); }
+.kyb-doc .v.pending { color: var(--amber); }
+.kyb-doc .v.mismatch { color: var(--red); }
+.kyb-doc .v::before { content:"●"; margin-inline-end:4px; }
+
+.kyb-flag { display: inline-block; font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em; color: var(--amber); border: 1px solid color-mix(in oklab, var(--amber) 40%, transparent); padding: 2px 5px; margin-inline-end: 4px; text-transform: uppercase; }
+.kyb-flag.err { color: var(--red); border-color: color-mix(in oklab, var(--red) 40%, transparent); }
+</style>
+</head>
+<body class="ops">
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../assets/data-ops-admin.js"></script>
+<script type="text/babel" src="../assets/ops-shell.jsx"></script>
+
+<script type="text/babel">
+const { useState, useMemo } = React;
+const A = window.DCP_OPS_ADMIN;
+const { OpsShell, Chip, Bar, Kpi } = window;
+function fmt(n, d=0) { return n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }); }
+
+const TABS = [
+  { k: "queue",     l: "KYB queue",   n: A.kyb_counters.review + A.kyb_counters.hold },
+  { k: "directory", l: "Directory",   n: A.provider_directory.length },
+];
+
+function KybQueue() {
+  const [sel, setSel] = useState(A.kyb_queue[0].id);
+  const active = A.kyb_queue.find(p => p.id === sel);
+
+  return (
+    <>
+      <div className="ops-grid c5" style={{marginBottom: 14}}>
+        <Kpi label="In review"        value={A.kyb_counters.review}         delta="SLA 24h · oldest 42h" deltaKind="down" em />
+        <Kpi label="On hold"          value={A.kyb_counters.hold}           delta="ownership concerns" deltaKind="neutral" />
+        <Kpi label="Approved · 24h"   value={A.kyb_counters.approved_24h}   delta="+33% vs 7d avg" />
+        <Kpi label="Rejected · 24h"   value={A.kyb_counters.rejected_24h}   delta="all IBAN mismatches" deltaKind="neutral" />
+        <Kpi label="Avg review time"  value={A.kyb_counters.avg_review_h+"h"} delta="target &lt; 8h" deltaKind="neutral" />
+      </div>
+
+      <div style={{display:"grid", gridTemplateColumns:"1fr 400px", gap:12}}>
+        <div style={{display:"grid", gap: 10}}>
+          {A.kyb_queue.map(p => (
+            <div key={p.id} className={"kyb-card " + (sel === p.id ? "sel" : "")} onClick={() => setSel(p.id)}>
+              <div style={{display:"grid", gridTemplateColumns:"1fr auto", gap:12, alignItems:"start"}}>
+                <div>
+                  <div style={{display:"flex", gap:6, alignItems:"center", marginBottom:6, flexWrap:"wrap"}}>
+                    <span className="mono" style={{fontSize:10, color:"var(--accent)", letterSpacing:".1em"}}>{p.id}</span>
+                    <Chip kind={p.status==="approved-pending-onboarding"?"ok":p.status==="hold"?"err":p.status==="rejected"?"err":"warn"} dot>
+                      {p.status.replace(/-/g, " ")}
+                    </Chip>
+                    {p.flags.map(f => (<span key={f} className={"kyb-flag " + (f.includes("mismatch") || f.includes("suspended") ? "err" : "")}>{f.replace(/-/g, " ")}</span>))}
+                  </div>
+                  <div style={{fontFamily:"var(--serif)", fontSize:20, lineHeight:1.15, marginBottom:4}}>{p.legal_name}</div>
+                  <div style={{fontFamily:"var(--mono)", fontSize:11, color:"var(--mut)", letterSpacing:".03em"}}>
+                    CR {p.cr} · VAT {p.vat} · IBAN …{p.iban_tail}
+                  </div>
+                  <div style={{fontFamily:"var(--mono)", fontSize:11, color:"var(--ink-2)", marginTop:6}}>
+                    {p.contact} · {p.phone} · {p.region}
+                  </div>
+                  <div style={{fontFamily:"var(--mono)", fontSize:11, color:"var(--mut)", marginTop:6}}>
+                    <span style={{color:"var(--ink)"}}>{p.rigs} rig · {p.gpus} GPU</span> · {p.model}
+                  </div>
+                </div>
+                <div style={{fontFamily:"var(--mono)", fontSize:10, color:"var(--mut)", textAlign:"end"}}>
+                  submitted<br/>{p.submitted.replace(" ", " · ")}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {active && (
+          <div className="ops-card" style={{position:"sticky", top:70, alignSelf:"start"}}>
+            <div className="ops-card-hd">
+              <div>
+                <div className="ops-card-eb accent">{active.id}</div>
+                <div className="ops-card-t" style={{fontSize:18, marginTop:2}}>{active.legal_name}</div>
+              </div>
+              <Chip kind={active.status==="approved-pending-onboarding"?"ok":active.status==="hold"?"err":active.status==="rejected"?"err":"warn"}>{active.status.replace(/-/g, " ")}</Chip>
+            </div>
+
+            <div style={{fontFamily:"var(--mono)", fontSize:10, color:"var(--mut)", letterSpacing:".12em", textTransform:"uppercase", marginBottom:6}}>Legal</div>
+            <div className="kyb-doc"><span className="k">Commercial registration</span><span className={"v " + active.docs.cr}>{active.docs.cr}</span></div>
+            <div className="kyb-doc"><span className="k">VAT certificate</span><span className={"v " + active.docs.vat}>{active.docs.vat}</span></div>
+            <div className="kyb-doc"><span className="k">IBAN letter</span><span className={"v " + active.docs.iban}>{active.docs.iban}</span></div>
+            <div className="kyb-doc"><span className="k">ID (owner)</span><span className={"v " + active.docs.id}>{active.docs.id}</span></div>
+
+            <div style={{fontFamily:"var(--mono)", fontSize:10, color:"var(--mut)", letterSpacing:".12em", textTransform:"uppercase", margin:"14px 0 6px"}}>Capacity</div>
+            <div className="ops-dl">
+              <dt>Rigs</dt><dd>{active.rigs}</dd>
+              <dt>GPUs</dt><dd>{active.gpus}</dd>
+              <dt>Hardware</dt><dd>{active.model}</dd>
+              <dt>Region</dt><dd>{active.region}</dd>
+            </div>
+
+            {active.flags.length > 0 && (
+              <>
+                <div style={{fontFamily:"var(--mono)", fontSize:10, color:"var(--amber)", letterSpacing:".12em", textTransform:"uppercase", margin:"14px 0 6px"}}>Flags</div>
+                {active.flags.map(f => <div key={f} style={{fontFamily:"var(--mono)", fontSize:11, color:"var(--ink-2)", padding:"2px 0"}}>· {f.replace(/-/g, " ")}</div>)}
+              </>
+            )}
+
+            <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginTop:18, paddingTop:14, borderTop:"1px solid var(--hair)"}}>
+              <button className="ops-btn danger">Reject</button>
+              <button className="ops-btn">Request more</button>
+              <button className="ops-btn" style={{gridColumn:"span 2"}}>Hold for review</button>
+              <button className="ops-btn primary" style={{gridColumn:"span 2"}}>Approve &amp; onboard</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+function Directory() {
+  const [region, setRegion] = useState("all");
+  const rows = region === "all" ? A.provider_directory : A.provider_directory.filter(p => p.region === region);
+  return (
+    <>
+      <div className="ops-toolbar">
+        <div className="ops-filters">
+          <button className={"ops-filter " + (region==="all" ? "on" : "")} onClick={() => setRegion("all")}>All <span className="ct">{A.provider_directory.length}</span></button>
+          {A.regions.map(r => (
+            <button key={r.id} className={"ops-filter " + (region===r.id ? "on" : "")} onClick={() => setRegion(r.id)}>
+              {r.code} <span className="ct">{A.provider_directory.filter(p => p.region === r.id).length}</span>
+            </button>
+          ))}
+        </div>
+        <input className="ops-search" placeholder="name / id / owner…" />
+      </div>
+
+      <div className="ops-card" style={{padding:0}}>
+        <table className="ops-tbl">
+          <thead>
+            <tr>
+              <th>Provider</th>
+              <th>Region</th>
+              <th>Owner</th>
+              <th>Tier</th>
+              <th>KYB</th>
+              <th className="num">GPUs online</th>
+              <th className="num">Reliability</th>
+              <th className="num">Tokens/s</th>
+              <th className="num">SAR 24h</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(p => (
+              <tr key={p.id}>
+                <td>
+                  <div style={{color:"var(--ink)"}}>{p.name}</div>
+                  <div className="mono dim" style={{fontSize:10}}>{p.id} · joined {p.joined}</div>
+                </td>
+                <td><span className="mono" style={{color:"var(--accent)"}}>{A.regions.find(r=>r.id===p.region).code}</span></td>
+                <td>{p.owner}</td>
+                <td><Chip kind={p.tier==="A"?"ok":p.tier==="B"?"info":"mut"}>Tier {p.tier}</Chip></td>
+                <td><Chip kind="ok" dot>{p.kyb}</Chip></td>
+                <td className="num">{p.online}/{p.gpus}</td>
+                <td className="num" style={{color: p.rel<0.97 ? "var(--amber)" : "var(--ink)"}}>{(p.rel*100).toFixed(2)}%</td>
+                <td className="num">{fmt(p.tps)}</td>
+                <td className="num">{fmt(p.sar_24h)}</td>
+                <td><button className="ops-btn sm">Inspect</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function App() {
+  const [tab, setTab] = useState("queue");
+  return (
+    <OpsShell current="providers" crumb="Providers" alarms={1} env="PROD" build={A.build}>
+      <div className="ops-page">
+        <div className="ops-page-hd">
+          <div>
+            <div className="ops-page-eb">Ops · Directory</div>
+            <h1 className="ops-page-h1">Providers &amp; <em>KYB</em></h1>
+            <div className="ops-page-lede">
+              Every provider on the DCP marketplace — active and pending. Review KYB submissions (CR, VAT, IBAN, ID), hold or approve, and browse the live directory by region.
+            </div>
+          </div>
+          <div className="ops-page-actions">
+            <button className="ops-btn">Export directory</button>
+            <button className="ops-btn primary">KYB runbook</button>
+          </div>
+        </div>
+
+        <div className="ops-toolbar" style={{marginBottom:14}}>
+          <div className="ops-filters">
+            {TABS.map(t => (
+              <button key={t.k} className={"ops-filter " + (tab===t.k ? "on" : "")} onClick={() => setTab(t.k)}>
+                {t.l} <span className="ct">{t.n}</span>
+              </button>
+            ))}
+          </div>
+          <div style={{fontFamily:"var(--mono)", fontSize:11, color:"var(--mut)"}}>487 providers · 1,850 GPUs fleet-wide</div>
+        </div>
+
+        {tab === "queue"     && <KybQueue />}
+        {tab === "directory" && <Directory />}
+      </div>
+    </OpsShell>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

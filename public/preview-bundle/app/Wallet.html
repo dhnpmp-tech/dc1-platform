@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-palette="midnight">
+<head>
+<meta charset="utf-8">
+<title>Wallet — DCP</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/dcp-kit.css">
+<link rel="stylesheet" href="../assets/app-shell.css">
+<link rel="stylesheet" href="../assets/app-i18n-rtl.css">
+<style>
+  .main-scroll { grid-area: main; overflow-y: auto; padding: 32px 40px 60px; }
+  .wh-head { display:grid; grid-template-columns:1fr auto; gap:24px; align-items:baseline; padding-bottom:20px; border-bottom:1px solid var(--hair); margin-bottom:28px; }
+  .wh-eb { font-family:var(--mono); font-size:11px; letter-spacing:.16em; color:var(--teal); text-transform:uppercase; }
+  .wh-h1 { font-family:var(--serif); font-weight:400; font-size:56px; line-height:1.12; margin:10px 0 14px; letter-spacing:-.005em; padding-bottom:4px; }
+  .wh-h1 em { color:var(--orange); font-style:italic; }
+  .wh-lede { color:var(--ink-2); font-size:15px; max-width:64ch; line-height:1.55; }
+
+  .bal-grid { display:grid; grid-template-columns:1fr 1fr; gap:0; border:1px solid var(--hair); background:var(--paper); margin-bottom:28px; }
+  .bal-card { padding:28px 28px 24px; border-inline-end: 1px solid var(--hair); position:relative; }
+  .bal-card:last-child { border-inline-end: 0; }
+  .bal-k { font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; color:var(--mut); text-transform:uppercase; }
+  .bal-v { font-family:var(--serif); font-size:72px; font-weight:400; line-height:1.05; margin-top:6px; padding-bottom:6px; letter-spacing:-.01em; }
+  .bal-v em { color:var(--orange); font-style:italic; }
+  .bal-v small { font-family:var(--mono); font-size:14px; color:var(--mut); letter-spacing:.04em; margin-inline-start:10px; vertical-align:middle; font-style:normal; }
+  .bal-sub { font-family:var(--mono); font-size:11px; color:var(--mut); margin-top:8px; letter-spacing:.04em; }
+  .bal-act { display:flex; gap:8px; margin-top:16px; }
+  .bal-act .btn { flex:1; justify-content:center; display:inline-flex; align-items:center; }
+  .bal-tag { position:absolute; top:20px; inset-inline-end:20px; font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; padding:4px 8px; border:1px solid var(--hair); color:var(--mut); }
+
+  .wh-card { background:var(--paper); border:1px solid var(--hair); padding:22px; margin-bottom:20px; }
+  .wh-card-hd { display:flex; justify-content:space-between; align-items:baseline; padding-bottom:12px; border-bottom:1px dashed var(--hair); margin-bottom:14px; }
+  .wh-card-t { font-family:var(--serif); font-size:22px; }
+
+  .tx-row { display:grid; grid-template-columns:80px 80px 1fr auto; gap:14px; align-items:center; padding:12px 0; border-bottom:1px dashed var(--hair); }
+  .tx-row:last-child { border-bottom:0; }
+  .tx-t { font-family:var(--mono); font-size:11px; color:var(--mut); letter-spacing:.05em; }
+  .tx-mode { font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; padding:2px 6px; border:1px solid var(--hair); color:var(--mut); justify-self:start; }
+  .tx-amt { font-family:var(--serif); font-size:22px; font-style:italic; text-align:end; }
+  .tx-amt.debit { color:var(--ink); }
+  .tx-amt.credit { color:var(--teal); }
+
+  .duo { display:grid; grid-template-columns:1.2fr 1fr; gap:20px; }
+  .topup-opt { padding:14px; border:1px solid var(--hair); background:var(--bg-2); margin-bottom:10px; display:grid; grid-template-columns:1fr auto; gap:10px; align-items:center; cursor:pointer; }
+  .topup-opt:hover { border-color:var(--orange); }
+  .topup-opt.on { border-color:var(--teal); border-inline-start-width:3px; }
+  .topup-amt { font-family:var(--serif); font-size:28px; font-style:italic; color:var(--orange); }
+  .toggle { width:44px; height:24px; background:var(--hair); position:relative; cursor:pointer; }
+  .toggle.on { background:var(--teal); }
+  .toggle::after { content:""; position:absolute; top:2px; inset-inline-start:2px; width:20px; height:20px; background:var(--paper); transition:all .2s; }
+  .toggle.on::after { inset-inline-start:22px; }
+
+  .qr-box { width:160px; height:160px; background:var(--bg-2); border:1px solid var(--hair); display:grid; grid-template-columns:repeat(16,1fr); grid-template-rows:repeat(16,1fr); gap:1px; padding:8px; }
+  .qr-box span { background:var(--ink); }
+  .qr-box span.o { background:transparent; }
+
+  .addr-box { font-family:var(--mono); font-size:12px; padding:12px; background:var(--bg-2); border:1px solid var(--hair); display:flex; justify-content:space-between; align-items:center; margin-top:14px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../assets/data-app.js"></script>
+<script src="../assets/i18n.js?v=2"></script>
+<script src="../assets/data-renter.js"></script>
+<script type="text/babel" src="../assets/dcp-kit.jsx"></script>
+<script type="text/babel" src="../assets/app-shell.jsx"></script>
+<script type="text/babel">
+const { useState } = React;
+const D = window.DCP_RENTER;
+
+// Seeded pseudo-QR (just a visual — not a real QR code)
+function QR({ seed = "dcp" }) {
+  let s = 0;
+  for (const c of seed) s = (s * 31 + c.charCodeAt(0)) >>> 0;
+  const cells = Array.from({length: 256}, (_,i) => {
+    s = (s * 1103515245 + 12345) >>> 0;
+    const r = i % 16, c = Math.floor(i/16);
+    // Finder squares
+    if ((r<3&&c<3)||(r<3&&c>12)||(r>12&&c<3)) return 1;
+    if ((r===1&&c===1)||(r===1&&c===14)||(r===14&&c===1)) return 0;
+    return (s & 1);
+  });
+  return <div className="qr-box">{cells.map((v,i) => <span key={i} className={v ? "" : "o"}/>)}</div>;
+}
+
+function Wallet() {
+  const [lang] = window.useLang();
+  const t = (k, fb) => window.T(lang, "wallet."+k, fb);
+  const [autoTopup, setAutoTopup] = useState(true);
+  const [amt, setAmt] = useState(2000);
+
+  return (
+    <window.AppFrame current="wallet" crumb={lang==="ar"?"المحفظة":"Wallet"} topbarRight={<a href="./Invoices.html" className="btn ghost sm">{lang==="ar"?"الفواتير ←":"Invoices →"}</a>}>
+      <div className="main-scroll">
+        <div className="wh-head">
+          <div>
+            <div className="wh-eb">{t("eb")}</div>
+            <h1 className="wh-h1">{t("h1_a")} <em>SAR 2,184.52</em> <span style={{color:"var(--mut)", fontSize:32}}>{t("h1_mid")}</span></h1>
+            <div className="wh-lede">{t("lede")}</div>
+          </div>
+          <div style={{display:"flex", gap:8}}>
+            <button className="btn ghost sm">{t("statement")}</button>
+            <button className="btn primary sm">{t("topup")}</button>
+          </div>
+        </div>
+
+        <div className="bal-grid">
+          <div className="bal-card">
+            <div className="bal-tag">{t("sar_primary")}</div>
+            <div className="bal-k">{t("sar_label")}</div>
+            <div className="bal-v"><em>2,184.52</em></div>
+            <div className="bal-sub">SAR 2.72 {t("sar_held")}</div>
+            <div className="bal-act">
+              <button className="btn primary sm">{t("topup_mada")}</button>
+              <button className="btn ghost sm">{t("withdraw")}</button>
+            </div>
+          </div>
+          <div className="bal-card" style={{background:"linear-gradient(135deg, var(--paper) 0%, color-mix(in oklab, var(--teal) 6%, var(--paper)) 100%)"}}>
+            <div className="bal-tag" style={{color:"var(--teal)", borderColor:"var(--teal)"}}>{t("usdc_tag")}</div>
+            <div className="bal-k">{t("usdc_label")}</div>
+            <div className="bal-v">1,250.00 <small>≈ SAR 4,689</small></div>
+            <div className="bal-sub">{t("usdc_deposit_addr")} <span style={{color:"var(--ink)"}}>0x7Fe3…A2F1</span> · {t("usdc_only")}</div>
+            <div className="bal-act">
+              <button className="btn sm" style={{borderColor:"var(--teal)", color:"var(--teal)"}}>{t("deposit_usdc")}</button>
+              <button className="btn ghost sm">{t("swap_sar")}</button>
+            </div>
+          </div>
+        </div>
+
+        <div className="duo">
+          <div className="wh-card">
+            <div className="wh-card-hd">
+              <div className="wh-card-t">{t("recent")}</div>
+              <button className="btn ghost sm">{t("view_all")}</button>
+            </div>
+            {D.transactions.map((tx,i) => (
+              <div className="tx-row" key={i}>
+                <div className="tx-t">{tx.t}</div>
+                <div className="tx-mode">{tx.mode}</div>
+                <div style={{fontSize:13.5}}>{tx.note}</div>
+                <div className={"tx-amt " + tx.kind}>
+                  {tx.kind==="credit" ? "+" : "−"}{tx.mode} {Math.abs(tx.amt).toFixed(2)}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div>
+            <div className="wh-card">
+              <div className="wh-card-hd"><div className="wh-card-t">{t("auto_topup")}</div>
+                <div className={"toggle " + (autoTopup?"on":"")} onClick={()=>setAutoTopup(!autoTopup)}/>
+              </div>
+              <div style={{fontSize:13.5, color:"var(--ink-2)", lineHeight:1.55, marginBottom:14}}>
+                {t("auto_body_1")} <em style={{color:"var(--orange)", fontFamily:"var(--serif)", fontStyle:"italic"}}>SAR 500</em>{lang==="ar"?"، ":", "}{t("auto_body_2")} <em style={{color:"var(--orange)", fontFamily:"var(--serif)", fontStyle:"italic"}}>SAR {amt.toLocaleString()}</em>.
+              </div>
+              {[1000, 2000, 5000].map(a => (
+                <div key={a} className={"topup-opt " + (amt===a?"on":"")} onClick={()=>setAmt(a)}>
+                  <div>
+                    <div style={{fontSize:13.5, fontWeight:500}}>{a===1000?t("light"):a===2000?t("standard"):t("heavy")}</div>
+                    <div style={{fontFamily:"var(--mono)", fontSize:10.5, color:"var(--mut)", letterSpacing:".06em", marginTop:2}}>{a===1000?"~2 ":a===2000?"~4 ":"~10 "}{t("weeks")}</div>
+                  </div>
+                  <div className="topup-amt">SAR {a.toLocaleString()}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="wh-card">
+              <div className="wh-card-hd"><div className="wh-card-t">{t("deposit_usdc_card")}</div>
+                <div className="wh-eb" style={{color:"var(--teal)"}}>Base L2</div>
+              </div>
+              <div style={{display:"grid", gridTemplateColumns:"auto 1fr", gap:18, alignItems:"start"}}>
+                <QR seed="0x7Fe3A2F1DCP" />
+                <div>
+                  <div style={{fontSize:12.5, color:"var(--ink-2)", lineHeight:1.55}}>{t("send_hint")}</div>
+                  <div className="addr-box">
+                    <span>0x7Fe3…A2F1</span>
+                    <button className="btn ghost sm" style={{padding:"4px 10px"}}>{t("copy")}</button>
+                  </div>
+                  <div style={{fontFamily:"var(--mono)", fontSize:10.5, color:"var(--mut)", letterSpacing:".08em", marginTop:10}}>{t("conversion")}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </window.AppFrame>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<Wallet />);
+</script>
+<script src="../assets/app-polish.js"></script>
+</body>
+</html>

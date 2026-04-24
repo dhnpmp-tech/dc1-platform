@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>DCP Ops — Admin Audit Log</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../assets/dcp-kit.css" />
+<link rel="stylesheet" href="../assets/ops-shell.css" />
+<style>
+.au-row { display: grid; grid-template-columns: 90px 180px 190px 180px 1fr; gap: 14px; padding: 10px 16px; border-bottom: 1px solid var(--hair); align-items: center; font-family: var(--mono); font-size: 11.5px; }
+.au-row:hover { background: var(--bg-2); }
+.au-row .at { color: var(--dim); }
+.au-row .actor { color: var(--ink); }
+.au-row .actor.sys { color: var(--amber); }
+.au-row .action { color: var(--accent); }
+.au-row .target { color: var(--ink-2); }
+.au-row .note { color: var(--mut); }
+</style>
+</head>
+<body class="ops">
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../assets/data-ops-admin.js"></script>
+<script type="text/babel" src="../assets/ops-shell.jsx"></script>
+<script type="text/babel">
+const { useState, useMemo } = React;
+const A = window.DCP_OPS_ADMIN;
+const { OpsShell, Chip, Kpi } = window;
+
+function App() {
+  const [query, setQuery] = useState("");
+  const [actor, setActor] = useState("all");
+  const actors = useMemo(() => [...new Set(A.audit.map(a => a.actor))], []);
+  const rows = A.audit.filter(r => {
+    if (actor !== "all" && r.actor !== actor) return false;
+    if (query && !(r.actor + r.action + r.target + r.note).toLowerCase().includes(query.toLowerCase())) return false;
+    return true;
+  });
+
+  return (
+    <OpsShell current="audit" crumb="Admin Audit" alarms={1} env="PROD" build={A.build}>
+      <div className="ops-page">
+        <div className="ops-page-hd">
+          <div>
+            <div className="ops-page-eb">Ops · Security</div>
+            <h1 className="ops-page-h1">Admin <em>audit log</em></h1>
+            <div className="ops-page-lede">
+              Every internal action taken by a DCP operator or system service, immutable. Retention 7 years per PDPL · signed hourly to immutable storage.
+            </div>
+          </div>
+          <div className="ops-page-actions">
+            <button className="ops-btn">Verify signature</button>
+            <button className="ops-btn primary">Export audit</button>
+          </div>
+        </div>
+
+        <div className="ops-grid c4" style={{marginBottom:14}}>
+          <Kpi label="Events · 24h"    value={A.audit.length + " shown"} delta="signed · verified" em />
+          <Kpi label="Admin actions"   value={A.audit.filter(a=>a.actor!=="system").length} delta={actors.length-1 + " distinct operators"} deltaKind="neutral" />
+          <Kpi label="System events"   value={A.audit.filter(a=>a.actor==="system").length} delta="alert.fire × 2" deltaKind="neutral" />
+          <Kpi label="Retention"       value="7 yrs" delta="PDPL + SAMA" deltaKind="neutral" />
+        </div>
+
+        <div className="ops-toolbar">
+          <div className="ops-filters">
+            <button className={"ops-filter " + (actor==="all"?"on":"")} onClick={()=>setActor("all")}>All <span className="ct">{A.audit.length}</span></button>
+            {actors.map(a => (
+              <button key={a} className={"ops-filter " + (actor===a?"on":"")} onClick={()=>setActor(a)}>{a.split("@")[0]} <span className="ct">{A.audit.filter(x=>x.actor===a).length}</span></button>
+            ))}
+          </div>
+          <input className="ops-search" placeholder="action / target / note…" value={query} onChange={e=>setQuery(e.target.value)} />
+        </div>
+
+        <div className="ops-card" style={{padding:0}}>
+          <div style={{display:"grid", gridTemplateColumns:"90px 180px 190px 180px 1fr", gap:14, padding:"8px 16px", background:"var(--bg-2)", borderBottom:"1px solid var(--hair-2)", fontFamily:"var(--mono)", fontSize:10, letterSpacing:".12em", color:"var(--mut)", textTransform:"uppercase"}}>
+            <span>Time</span><span>Actor</span><span>Action</span><span>Target</span><span>Note</span>
+          </div>
+          {rows.map((r,i) => (
+            <div key={i} className="au-row">
+              <span className="at">{r.at}</span>
+              <span className={"actor " + (r.actor==="system" ? "sys" : "")}>{r.actor}</span>
+              <span className="action">{r.action}</span>
+              <span className="target">{r.target}</span>
+              <span className="note">{r.note}</span>
+            </div>
+          ))}
+          {rows.length === 0 && (
+            <div style={{padding:40, textAlign:"center", color:"var(--mut)", fontFamily:"var(--mono)", fontSize:12}}>No events match.</div>
+          )}
+        </div>
+
+        <div style={{marginTop:14, fontFamily:"var(--mono)", fontSize:10.5, color:"var(--mut)", letterSpacing:".04em"}}>
+          <span style={{color:"var(--green)"}}>●</span> log tail is <span style={{color:"var(--ink)"}}>signed &amp; verified</span> at 2026-04-23 14:00 AST · next signature at 15:00 · chain head <span className="mono" style={{color:"var(--accent)"}}>sha256:ab1e0f6…d2c1</span>
+        </div>
+      </div>
+    </OpsShell>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en" dir="ltr" data-palette="midnight">
+<head>
+<meta charset="utf-8">
+<title>Auth — DCP</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Naskh+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/dcp-kit.css">
+<style>
+  /* Auth screens live inside a design canvas. Each artboard is 640 x 860. */
+
+  .auth-board {
+    width: 100%; height: 100%; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); position: relative; overflow: hidden;
+    display: grid; grid-template-rows: auto 1fr auto;
+  }
+
+  /* canvas-wrapped header strip — just label + locale */
+  .auth-top {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 22px 36px; border-bottom: 1px solid var(--hair);
+    font-family: var(--mono); font-size: 11px; letter-spacing: .14em; color: var(--mut); text-transform: uppercase;
+  }
+  .auth-top .brand-mark {
+    display: flex; align-items: center; gap: 10px;
+    font-family: var(--serif); font-size: 22px; letter-spacing: -.005em; color: var(--ink); text-transform: none;
+  }
+  .auth-top .brand-mark::before {
+    content: ""; width: 22px; height: 22px;
+    background: linear-gradient(135deg, var(--orange) 0%, var(--orange-2, #c44418) 100%);
+  }
+  .auth-top .lang { display: flex; gap: 4px; }
+  .auth-top .lang span { padding: 4px 8px; }
+  .auth-top .lang span.on { color: var(--ink); border-bottom: 1px solid var(--ink); }
+
+  .auth-wrap {
+    display: grid; grid-template-columns: 1fr;
+    align-items: center; justify-items: center;
+    padding: 40px 56px; overflow: auto;
+  }
+
+  .auth-card { width: 100%; max-width: 440px; }
+
+  .auth-eyebrow {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em; color: var(--orange);
+    text-transform: uppercase;
+  }
+  .auth-card h1 {
+    font-family: var(--serif); font-weight: 400; font-size: 50px; line-height: 1.08;
+    letter-spacing: -.015em; margin: 14px 0 20px; color: var(--ink);
+  }
+  .auth-card h1 em { color: var(--orange); font-style: italic; }
+  .auth-card .blurb { color: var(--ink-2); font-size: 15.5px; line-height: 1.55; margin: 0 0 30px; max-width: 44ch; }
+
+  /* shared forms */
+  .field-group { display: flex; flex-direction: column; gap: 14px; margin-bottom: 18px; }
+  .fg-label {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em;
+    color: var(--mut); text-transform: uppercase; margin-bottom: 6px; display: block;
+  }
+  .fg-stack { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  .btn.primary.block { width: 100%; justify-content: center; padding: 16px 20px; font-size: 14px; }
+  .btn.block { width: 100%; justify-content: center; padding: 16px 20px; font-size: 14px; }
+
+  .auth-divider {
+    display: flex; align-items: center; gap: 12px;
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em; color: var(--mut);
+    text-transform: uppercase; margin: 22px 0;
+  }
+  .auth-divider::before, .auth-divider::after {
+    content: ""; flex: 1; height: 1px; background: var(--hair);
+  }
+
+  .sso-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .sso-btn {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    padding: 14px 16px; border: 1px solid var(--hair); background: var(--paper);
+    font-family: var(--sans); font-size: 13.5px; color: var(--ink); cursor: pointer;
+  }
+  .sso-btn:hover { border-color: var(--ink); }
+  .sso-btn svg { width: 18px; height: 18px; }
+  .sso-btn.nafath { grid-column: 1 / -1; background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .sso-btn.nafath:hover { background: var(--orange); border-color: var(--orange); }
+  .sso-btn.nafath::before {
+    content: "⬢"; color: var(--orange); font-size: 14px;
+  }
+  .sso-btn.nafath:hover::before { color: var(--ink); }
+
+  .alt-link {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .08em; color: var(--mut);
+    margin-top: 22px; padding-top: 22px; border-top: 1px dashed var(--hair);
+  }
+  .alt-link a { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--ink); padding-bottom: 2px; }
+  .alt-link a:hover { color: var(--orange); border-color: var(--orange); }
+
+  /* footer strip */
+  .auth-foot {
+    padding: 18px 36px; border-top: 1px solid var(--hair); background: var(--paper);
+    display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10.5px;
+    letter-spacing: .12em; color: var(--mut); text-transform: uppercase;
+  }
+
+  /* ═══════════ SIGNUP ═══════════ */
+  .sig-benefits {
+    display: flex; flex-direction: column; gap: 10px; margin-top: 28px; padding: 20px 22px;
+    border: 1px solid var(--hair); background: var(--paper);
+  }
+  .sig-benefits .b {
+    display: grid; grid-template-columns: 16px 1fr; gap: 12px;
+    font-size: 13.5px; color: var(--ink-2); line-height: 1.45;
+  }
+  .sig-benefits .b .mk { color: var(--ok); font-family: var(--mono); font-size: 11px; }
+  .tos { font-family: var(--mono); font-size: 10.5px; letter-spacing: .04em; color: var(--mut); margin-top: 14px; line-height: 1.6; }
+  .tos a { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--hair); }
+
+  /* ═══════════ LOGIN ═══════════ */
+  .remember-row {
+    display: flex; justify-content: space-between; align-items: center; margin: -4px 0 18px;
+    font-family: var(--mono); font-size: 11px; color: var(--mut); letter-spacing: .06em;
+  }
+  .chk { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .chk input { width: 14px; height: 14px; accent-color: var(--orange); }
+  .remember-row a { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--hair); }
+
+  /* ═══════════ OTP ═══════════ */
+  .otp-shell { text-align: center; }
+  .otp-shell .sent-to {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .08em; color: var(--ink);
+    padding: 14px 20px; border: 1px dashed var(--hair); background: var(--paper);
+    margin: 20px auto 32px; display: inline-block;
+  }
+  .otp-boxes { display: flex; gap: 10px; justify-content: center; margin-bottom: 28px; }
+  .otp-boxes .box {
+    width: 58px; height: 72px; border: 1px solid var(--hair); background: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--serif); font-size: 38px; color: var(--ink);
+  }
+  .otp-boxes .box.on { border-color: var(--ink); }
+  .otp-boxes .box.active { border-color: var(--orange); box-shadow: 0 0 0 3px color-mix(in oklab, var(--orange) 18%, transparent); }
+  .otp-boxes .box .c { animation: cursor-blink 1s steps(2,end) infinite; color: var(--orange); font-family: var(--mono); font-weight: 400; }
+  @keyframes cursor-blink { to { opacity: 0; } }
+  .otp-timer {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .1em; color: var(--mut);
+    margin-bottom: 22px;
+  }
+  .otp-timer .t { color: var(--orange); font-size: 13px; }
+  .otp-resend { font-family: var(--mono); font-size: 11px; color: var(--mut); letter-spacing: .06em; margin-top: 20px; }
+  .otp-resend a { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--hair); margin-inline-start: 6px; }
+  .otp-resend.active a { color: var(--orange); border-color: var(--orange); }
+
+  /* ═══════════ FORGOT ═══════════ */
+  .forgot-steps {
+    display: grid; grid-template-columns: 24px 1fr; gap: 14px 16px; margin-top: 28px; padding: 20px 22px;
+    border: 1px solid var(--hair); background: var(--paper);
+  }
+  .forgot-steps .n { font-family: var(--mono); font-size: 11px; color: var(--orange); letter-spacing: .1em; padding-top: 2px; }
+  .forgot-steps .t { font-size: 13.5px; color: var(--ink-2); line-height: 1.45; }
+
+  /* ═══════════ CANVAS ADJUSTMENTS ═══════════ */
+  html[data-palette] body, html, body { background: #d6cdbf !important; font-family: var(--sans); color: #111; margin: 0; }
+  .page-head {
+    padding: 48px 64px 0; font-family: var(--sans);
+  }
+  .page-head .eb {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .14em; color: var(--ink-2);
+    text-transform: uppercase;
+  }
+  .page-head h1 {
+    font-family: var(--serif); font-weight: 400; font-style: italic;
+    font-size: 56px; line-height: 1.1; margin: 14px 0 22px; color: #111; letter-spacing: -.01em;
+  }
+  .page-head .eb { color: #444; }
+  .page-head p { color: #333; font-size: 16px; max-width: 68ch; margin: 0 0 20px; line-height: 1.55; }
+  .page-head .links { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; color: var(--mut); }
+  .page-head .links { color: #555; }
+  .page-head .links a { color: #111; text-decoration: none; border-bottom: 1px solid #111; margin-inline-end: 18px; padding-bottom: 2px; }
+  .page-head .links a:hover { color: var(--orange); border-color: var(--orange); }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <div class="eb">§ BATCH 02 · AUTH SCREENS · 4 VARIANTS</div>
+  <h1>Signup, login, verify, recover.</h1>
+  <p>All four auth surfaces on one canvas. Drag to reorder, click fullscreen to focus, press Esc to return. Each artboard is a 640 × 860 device-agnostic frame. Nafath is the default SSO because we're operating in-Kingdom.</p>
+  <div class="links">
+    <a href="./Console.html">→ Console</a>
+    <a href="./Settings.html">→ Settings</a>
+    <a href="./Index.html">→ Batch 2 Index</a>
+  </div>
+</div>
+
+<div id="app"></div>
+
+<script src="../assets/i18n.js"></script>
+<script src="../assets/data.js"></script>
+<script src="../assets/data-app.js"></script>
+<script>window.DCP_LOGO_SRC = "../assets/dcp-logo-square.jpeg";</script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="../assets/dcp-kit.jsx"></script>
+<script type="text/babel" src="./design-canvas.jsx"></script>
+<script type="text/babel" src="./Auth.jsx"></script>
+
+<script src="../assets/app-polish.js?v=3"></script>
+</body>
+</html>

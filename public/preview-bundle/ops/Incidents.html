@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>DCP Ops — Incidents</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../assets/dcp-kit.css" />
+<link rel="stylesheet" href="../assets/ops-shell.css" />
+<style>
+.inc-card { background: var(--paper); border: 1px solid var(--hair); padding: 16px 18px; border-inline-start: 3px solid var(--mut); transition: border-color .15s; }
+.inc-card.sev-major { border-inline-start-color: var(--red); }
+.inc-card.sev-minor { border-inline-start-color: var(--amber); }
+.inc-card.sev-maint { border-inline-start-color: var(--accent); }
+
+.inc-update { display: grid; grid-template-columns: 100px 1fr; gap: 12px; padding: 8px 0; border-top: 1px dashed var(--hair); font-family: var(--mono); font-size: 11px; }
+.inc-update:first-child { border-top: 0; }
+.inc-update .at { color: var(--mut); }
+.inc-update .nt { color: var(--ink); line-height: 1.5; }
+
+.inc-compose { background: var(--bg); border: 1px solid var(--hair-2); padding: 14px; }
+.inc-compose textarea { width: 100%; min-height: 80px; background: transparent; border: 0; color: var(--ink); font-family: var(--mono); font-size: 12px; line-height: 1.6; resize: vertical; outline: none; }
+.inc-compose textarea::placeholder { color: var(--dim); }
+</style>
+</head>
+<body class="ops">
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../assets/data-ops-admin.js"></script>
+<script type="text/babel" src="../assets/ops-shell.jsx"></script>
+<script type="text/babel">
+const { useState } = React;
+const A = window.DCP_OPS_ADMIN;
+const { OpsShell, Chip, Kpi } = window;
+
+function App() {
+  const [sel, setSel] = useState(A.incidents[0].id);
+  const active = A.incidents.find(i => i.id === sel);
+  const sevClass = s => s==="major" ? "sev-major" : s==="minor" ? "sev-minor" : "sev-maint";
+
+  return (
+    <OpsShell current="incidents" crumb="Incidents" alarms={1} env="PROD" build={A.build}>
+      <div className="ops-page">
+        <div className="ops-page-hd">
+          <div>
+            <div className="ops-page-eb">Ops · Status</div>
+            <h1 className="ops-page-h1">Incidents &amp; <em>status editor</em></h1>
+            <div className="ops-page-lede">
+              Live and historical incidents. Compose updates that publish to <span className="mono">status.dcp.sa</span> and customer webhooks within 10s.
+            </div>
+          </div>
+          <div className="ops-page-actions">
+            <button className="ops-btn">Postmortem template</button>
+            <button className="ops-btn primary">+ New incident</button>
+          </div>
+        </div>
+
+        <div className="ops-grid c4" style={{marginBottom:14}}>
+          <Kpi label="Active"       value={A.incidents.filter(i=>i.status==="investigating").length} delta={active?.title?.slice(0,36)+"…"} deltaKind="down" em />
+          <Kpi label="Scheduled"    value={A.incidents.filter(i=>i.status==="scheduled").length} delta="Next: Apr 25 · 02:00 AST" deltaKind="neutral" />
+          <Kpi label="Resolved · 30d" value={22} delta="MTTR 14 min" />
+          <Kpi label="Uptime · 30d" value="99.94%" delta="SLA 99.90" />
+        </div>
+
+        <div style={{display:"grid", gridTemplateColumns:"360px 1fr", gap:12}}>
+          <div style={{display:"grid", gap:10}}>
+            {A.incidents.map(i => (
+              <div key={i.id} className={"inc-card " + sevClass(i.severity)} style={{cursor:"pointer", background: sel===i.id ? "color-mix(in oklab, var(--accent) 6%, var(--paper))" : ""}} onClick={()=>setSel(i.id)}>
+                <div style={{display:"flex", gap:6, marginBottom:6}}>
+                  <Chip kind={i.severity==="major"?"err":i.severity==="minor"?"warn":"info"}>{i.severity}</Chip>
+                  <Chip kind={i.status==="investigating"?"err":i.status==="scheduled"?"info":"ok"} dot>{i.status}</Chip>
+                </div>
+                <div style={{fontFamily:"var(--serif)", fontSize:16, lineHeight:1.2, marginBottom:4}}>{i.title}</div>
+                <div className="mono dim" style={{fontSize:10, letterSpacing:".05em"}}>{i.id} · started {i.started}</div>
+                <div className="mono" style={{fontSize:10, color:"var(--accent)", marginTop:4, letterSpacing:".08em"}}>Affects: {i.affects.map(r=>r.toUpperCase()).join(" · ")}</div>
+              </div>
+            ))}
+          </div>
+
+          {active && (
+            <div className="ops-card">
+              <div style={{display:"flex", gap:6, marginBottom:10, flexWrap:"wrap"}}>
+                <Chip kind={active.severity==="major"?"err":active.severity==="minor"?"warn":"info"}>{active.severity}</Chip>
+                <Chip kind={active.status==="investigating"?"err":active.status==="scheduled"?"info":"ok"} dot>{active.status}</Chip>
+                {active.affects.map(r => <Chip key={r} kind="mut">{r.toUpperCase()}</Chip>)}
+              </div>
+              <div className="ops-card-t" style={{fontSize:24}}>{active.title}</div>
+              <div className="mono dim" style={{fontSize:10, marginTop:4, letterSpacing:".05em"}}>{active.id} · commander {active.commander} · started {active.started}{active.resolved ? " · resolved " + active.resolved : ""}</div>
+
+              <div style={{marginTop:14, paddingTop:10, borderTop:"1px solid var(--hair)"}}>
+                <div style={{fontFamily:"var(--mono)", fontSize:10, color:"var(--mut)", letterSpacing:".12em", textTransform:"uppercase", marginBottom:6}}>Impact</div>
+                <div style={{fontSize:13, color:"var(--ink)", lineHeight:1.55}}>{active.impact}</div>
+              </div>
+
+              <div style={{marginTop:16, paddingTop:12, borderTop:"1px solid var(--hair)"}}>
+                <div style={{fontFamily:"var(--mono)", fontSize:10, color:"var(--mut)", letterSpacing:".12em", textTransform:"uppercase", marginBottom:10}}>Timeline</div>
+                {active.updates.map((u,i) => (
+                  <div key={i} className="inc-update">
+                    <div className="at">{u.at}</div>
+                    <div className="nt">{u.note}</div>
+                  </div>
+                ))}
+              </div>
+
+              {active.status !== "resolved" && (
+                <div style={{marginTop:18, paddingTop:14, borderTop:"1px solid var(--hair)"}}>
+                  <div style={{fontFamily:"var(--mono)", fontSize:10, color:"var(--accent)", letterSpacing:".12em", textTransform:"uppercase", marginBottom:8}}>Post update</div>
+                  <div className="inc-compose">
+                    <textarea defaultValue={"Routing weight restored to 1.0 after PRV-0612 switch replaced — monitoring."} />
+                    <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:8, paddingTop:8, borderTop:"1px dashed var(--hair)"}}>
+                      <div style={{display:"flex", gap:8}}>
+                        <select className="mono" style={{background:"transparent", border:"1px solid var(--hair-2)", color:"var(--ink)", fontFamily:"var(--mono)", fontSize:11, padding:"4px 8px"}}>
+                          <option>Status: monitoring</option>
+                          <option>Status: investigating</option>
+                          <option>Status: identified</option>
+                          <option>Status: resolved</option>
+                        </select>
+                        <label className="mono" style={{fontSize:11, color:"var(--mut)", display:"flex", alignItems:"center", gap:6}}>
+                          <input type="checkbox" defaultChecked /> publish
+                        </label>
+                        <label className="mono" style={{fontSize:11, color:"var(--mut)", display:"flex", alignItems:"center", gap:6}}>
+                          <input type="checkbox" defaultChecked /> webhook
+                        </label>
+                      </div>
+                      <button className="ops-btn primary sm">Post update</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </OpsShell>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
