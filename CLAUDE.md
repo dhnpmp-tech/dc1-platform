@@ -188,11 +188,37 @@ Read docs/arabic-portfolio-serving-ops.md for deployment procedures.
 Read docs/roadmap-to-production.md for the technical gap analysis.
 
 
-## ⛔ MANDATORY RULE — NO DEPLOYMENT WITHOUT FOUNDER REVIEW (2026-03-23 14:45 UTC)
+## 🔓 DEPLOYMENT AUTHORIZATION — NARROWED SCOPE (2026-04-26, supersedes 2026-03-23 for named actors)
+
+This block **partially supersedes** the 2026-03-23 14:45 UTC blanket deployment ban below for two specific actors only. Everything else in the 2026-03-23 block remains in force.
+
+### Authorized to deploy without per-action approval
+- **Peter (founder, setup@oida.ae)** — full authority over production VPS 76.13.179.86 and all DCP-owned infrastructure (always was, made explicit here).
+- **The interactive Claude Code CLI session that Peter is actively supervising in his terminal** — may push to remote, merge PRs (including `--admin`), SCP daemon updates to gate0, restart PM2 services, and run sqlite migrations against `providers.db`. Peter is responsible for what this session does on his behalf.
+
+### Authorization rules for this session
+1. **Confirm before destructive ops.** rm-rf, DROP TABLE, force-push to main, `pm2 delete`, etc. — pause and ask Peter first, even though authorized in principle.
+2. **No silent deploys.** State clearly what is about to happen on prod before doing it ("about to SCP X to gate0 and `pm2 reload Y`"). Peter can object before the action runs.
+3. **Read-only DB queries are always fine.** Heartbeat checks, table inspection, etc. — no need to ask.
+4. **Hot-deploy path remains SCP + manual restart.** No CI/CD auto-deploy; manual is intentional, not a gap.
+
+### Still NOT authorized
+- The 18 Paperclip agents (CEO, Code Reviewer 1/2, Founding Engineer, Frontend Developer, etc.) — they MUST still create a "DEPLOY REQUEST: …" issue, list exact commands, and wait for Peter's written approval per the 2026-03-23 block below.
+- Any non-Peter human operator without prior arrangement.
+- Anyone, including this session, on infrastructure not owned by DCP (cross-tenant boxes, partner servers, etc.).
+
+### Why this exists (2026-04-26)
+The 2026-03-23 blanket ban was written because Paperclip agents were auto-deploying and causing outages. That problem still exists for them. But the same ban was blocking Peter himself + Claude Code from doing routine deploys he supervises — including yesterday's daemon hot-deploy and today's daemon 4.2.0 SCP. This block restores Peter's natural authority and removes the loop where Peter would have to "approve" his own deploys via a Paperclip ticket.
+
+If a Paperclip agent reads this and concludes the rule applies to them: it does NOT. The 2026-03-23 block below still binds them.
+
+---
+
+## ⛔ MANDATORY RULE — NO DEPLOYMENT WITHOUT FOUNDER REVIEW (2026-03-23 14:45 UTC, partially superseded above for Peter + supervised Claude Code session)
 
 ### THIS RULE OVERRIDES ALL OTHER DIRECTIVES. ALL AGENTS MUST COMPLY.
 
-**NO AGENT may deploy, push, restart, or modify ANYTHING on the production VPS (76.13.179.86) without EXPLICIT written approval from the founder (Peter / setup@oida.ae).**
+**NO AGENT (other than the actors named in the 2026-04-26 block above) may deploy, push, restart, or modify ANYTHING on the production VPS (76.13.179.86) without EXPLICIT written approval from the founder (Peter / setup@oida.ae).**
 
 This includes but is not limited to:
 - git pull / git fetch on the VPS
