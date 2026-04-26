@@ -5,7 +5,7 @@
 
 ## Overview
 
-DCP currently uses a centralised SQLite registry on the VPS at `76.13.179.86`.
+DCP currently uses a centralised SQLite registry on the VPS at `api.dcp.sa`.
 Providers register once and renters query `/api/providers/available` — a single
 point of failure that also requires the VPS to be online for any GPU discovery
 to work.
@@ -219,11 +219,11 @@ pm2 start bootstrap.js --name dc1-p2p-bootstrap
 pm2 save
 ```
 
-Copy the printed multiaddr (e.g. `/ip4/76.13.179.86/tcp/4001/p2p/12D3KooW...`)
+Copy the printed multiaddr (e.g. `/ip4/api.dcp.sa/tcp/4001/p2p/12D3KooW...`)
 and set it as an environment variable on all provider machines:
 
 ```bash
-export DCP_P2P_BOOTSTRAP=/ip4/76.13.179.86/tcp/4001/p2p/12D3KooW...
+export DCP_P2P_BOOTSTRAP=/ip4/api.dcp.sa/tcp/4001/p2p/12D3KooW...
 ```
 
 Also update `DEFAULT_BOOTSTRAP_ADDR` in `dc1-node.js`.

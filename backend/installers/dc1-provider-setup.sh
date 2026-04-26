@@ -15,7 +15,7 @@ NC='\033[0m'
 
 # Configuration
 DC1_API_KEY="${1:-}"
-DC1_API_URL="${2:-http://76.13.179.86:8083}"
+DC1_API_URL="${2:-https://api.dcp.sa}"
 DC1_PROVIDER_DIR="$HOME/dc1-provider"
 
 # ============================================================================

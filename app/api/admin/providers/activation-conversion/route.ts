@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://76.13.179.86:8083'
+const BACKEND_URL = process.env.BACKEND_URL || 'https://api.dcp.sa'
 
 export async function GET() {
   const adminToken = process.env.DC1_ADMIN_TOKEN

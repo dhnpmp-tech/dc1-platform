@@ -6,7 +6,7 @@ Discovers GPU providers via the DC1 P2P mesh (without querying the central
 VPS API), broadcasts a job request, collects bids from competing providers,
 accepts the lowest-cost bid, and waits for the job result delivered P2P.
 
-The VPS API at 76.13.179.86:8083 is NOT involved in job data transfer.
+The VPS API at api.dcp.sa is NOT involved in job data transfer.
 A billing notification may be sent after completion (Phase D).
 
 Usage:

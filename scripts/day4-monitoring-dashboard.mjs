@@ -128,7 +128,7 @@ async function checkModelCatalog() {
 function getSystemResources() {
   try {
     const output = child_process.execSync(
-      'ssh root@76.13.179.86 "free -h | grep Mem | awk \'{print $3, $2}\' && uptime | awk \'{print $(NF-2), $(NF-1), $NF}\'" 2>/dev/null',
+      'ssh root@api.dcp.sa "free -h | grep Mem | awk \'{print $3, $2}\' && uptime | awk \'{print $(NF-2), $(NF-1), $NF}\'" 2>/dev/null',
       { timeout: 3000, encoding: 'utf8' }
     ).trim();
 

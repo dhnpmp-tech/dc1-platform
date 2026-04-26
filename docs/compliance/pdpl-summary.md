@@ -94,7 +94,7 @@ DCP can provide:
 - **Compliance attestation letter** for procurement teams
 - **Architecture review** to verify data residency for specific use cases
 
-Contact: **support@dcp.sa** | **setup@oida.ae**
+Contact: **support@dcp.sa**
 
 ---
 

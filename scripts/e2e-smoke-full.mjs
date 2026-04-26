@@ -25,7 +25,7 @@
 const fs = require('fs');
 const { spawn } = require('child_process');
 
-const API_BASE = (process.env.DCP_API_BASE || 'http://76.13.179.86:8083/api').replace(/\/$/, '');
+const API_BASE = (process.env.DCP_API_BASE || 'https://api.dcp.sa/api').replace(/\/$/, '');
 const PROVIDER_KEY = process.env.DCP_PROVIDER_KEY || '';
 const RENTER_KEY = process.env.DCP_RENTER_KEY || '';
 const ADMIN_TOKEN = process.env.DC1_ADMIN_TOKEN || '';

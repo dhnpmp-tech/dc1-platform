@@ -9,7 +9,7 @@ set -u
 
 REQUESTS="${1:-100}"
 CONCURRENCY="${2:-10}"
-API_BASE="${API_BASE:-http://76.13.179.86:8083/api}"
+API_BASE="${API_BASE:-https://api.dcp.sa/api}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOG_FILE="${REPO_ROOT}/backend/logs/load-test.log"

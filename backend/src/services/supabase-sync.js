@@ -4,7 +4,10 @@
 const { createClient } = require('@supabase/supabase-js');
 const db = require('../db');
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://rwxqcqgjszvbwcyjfpec.supabase.co';
+const SUPABASE_URL = process.env.SUPABASE_URL;
+if (!SUPABASE_URL) {
+  console.warn('[supabase-sync] SUPABASE_URL not set — sync disabled');
+}
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const SYNC_INTERVAL_MS = parseInt(process.env.SYNC_INTERVAL_MS || '30000', 10);
 const HEARTBEAT_TIMEOUT_S = 90;

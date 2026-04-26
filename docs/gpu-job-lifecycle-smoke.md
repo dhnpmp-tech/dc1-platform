@@ -8,7 +8,7 @@ Purpose: validate demo-critical GPU lifecycle path against live APIs:
 ## Usage
 
 ```bash
-DCP_API_BASE="http://76.13.179.86:8083/api" \
+DCP_API_BASE="https://api.dcp.sa/api" \
 DCP_PROVIDER_KEY="dc1-live-provider-key" \
 DCP_RENTER_KEY="dc1-live-renter-key" \
 node scripts/gpu-job-lifecycle-smoke.mjs
@@ -29,7 +29,7 @@ npm run smoke:gpu-job
 
 Optional:
 
-- `DCP_API_BASE` (default `http://76.13.179.86:8083/api`)
+- `DCP_API_BASE` (default `https://api.dcp.sa/api`)
 - `DCP_SMOKE_POLL_MS` (default `3000`)
 - `DCP_SMOKE_TIMEOUT_MS` (default `180000`)
 - `DCP_SMOKE_DURATION_MINUTES` (default `0.2`)

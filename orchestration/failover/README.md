@@ -39,8 +39,8 @@ Health Daemon → detect_failure() → RecoveryOrchestrator.handle_interruption(
 
 ```bash
 # Mission Control
-MC_API_URL=http://76.13.179.86:8084/api
-MC_API_TOKEN=dc1-mc-gate0-2026
+MC_API_URL=https://mc.dcp.sa/api
+MC_API_TOKEN=YOUR_MC_API_TOKEN
 
 # S3 (Saudi/Bahrain region)
 S3_BUCKET=dc1-gate0-checkpoints

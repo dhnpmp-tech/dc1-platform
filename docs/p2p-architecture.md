@@ -67,7 +67,7 @@ The backend fetches all non-paused providers that have ever sent a heartbeat, co
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                  DCP VPS (76.13.179.86)              │
+│                  DCP VPS (api.dcp.sa)              │
 │                                                      │
 │  Express.js API (port 8083)                          │
 │  ┌──────────────────────────────────────────────┐   │
@@ -355,7 +355,7 @@ Infrastructure changes:
 | Item | Phase A/B | Phase C/D |
 |------|-----------|-----------|
 | Bootstrap node (VPS) | Add PM2 service, open ports 4001/4002 | Add second bootstrap node (separate VPS or region) |
-| Firewall | Open TCP 4001, WS 4002 on 76.13.179.86 | Same for second node |
+| Firewall | Open TCP 4001, WS 4002 on api.dcp.sa | Same for second node |
 | Daemon | No change | v4.0.0 adds libp2p module (~50 KB dependency) |
 | Backend | No change | Add P2P listener module to server.js |
 | Frontend | No change | Optional: WS-based renter P2P client |

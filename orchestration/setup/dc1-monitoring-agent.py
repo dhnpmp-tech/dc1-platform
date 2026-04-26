@@ -29,7 +29,7 @@ from typing import Optional
 # Config
 # ---------------------------------------------------------------------------
 
-DC1_SERVER_URL: str = os.getenv("DC1_SERVER_URL", "http://76.13.179.86:8084/api")
+DC1_SERVER_URL: str = os.getenv("DC1_SERVER_URL", "https://mc.dcp.sa/api")
 DC1_AGENT_SECRET: str = os.getenv("DC1_AGENT_SECRET", "")
 AGENT_PORT: int = int(os.getenv("DC1_AGENT_PORT", "8085"))
 HEARTBEAT_INTERVAL: int = int(os.getenv("HEARTBEAT_INTERVAL", "60"))

@@ -292,7 +292,7 @@ async function evaluateCandidate({
         cwd: worktreePath,
         allowFailure: true,
         env: {
-          BACKEND_URL: process.env.BACKEND_URL || "http://76.13.179.86:8083",
+          BACKEND_URL: process.env.BACKEND_URL || "https://api.dcp.sa",
         },
       });
 

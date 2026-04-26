@@ -59,7 +59,7 @@ The raw USD/hr comparison is misleading for DCP's target market for four structu
 | Saudi user → RunPod (US West) | 220–280 ms | Transatlantic + US backbone |
 | Saudi user → Lambda Labs (US-East/TX) | 180–230 ms | Gulf–Atlantic route |
 | Saudi user → Vast.ai (distributed, nearest US) | 150–200 ms [est] | Depends on seller location |
-| Saudi user → DCP VPS (76.13.179.86, Hostinger KSA-region) | **15–40 ms** | Local Riyadh/Gulf hosting |
+| Saudi user → DCP VPS (api.dcp.sa, Hostinger KSA-region) | **15–40 ms** | Local Riyadh/Gulf hosting |
 
 **Impact:** For real-time LLM inference, streaming APIs, and interactive applications, a 180–260 ms RTT reduction is a **qualitative improvement** — not just a cost factor. Applications that are non-viable on US-hosted GPUs (real-time voice, sub-100ms inference APIs) become viable on DCP.
 

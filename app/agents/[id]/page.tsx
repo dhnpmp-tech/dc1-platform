@@ -6,8 +6,8 @@ import Link from 'next/link';
 
 const MC_BASE = (process.env.NEXT_PUBLIC_MC_URL || '') + '/api';
 const MC_TOKEN = typeof window !== 'undefined'
-  ? (process.env.NEXT_PUBLIC_MC_TOKEN || 'dc1-mc-gate0-2026')
-  : 'dc1-mc-gate0-2026';
+  ? (process.env.NEXT_PUBLIC_MC_TOKEN || '')
+  : '';
 
 interface MCTask {
   id: string;

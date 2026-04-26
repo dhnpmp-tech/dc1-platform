@@ -14,7 +14,7 @@
 # Prerequisites:
 #   - Ubuntu 22.04+ on the VPS
 #   - Port 80 and 443 open in firewall (ufw allow 80 && ufw allow 443)
-#   - DNS A record: DOMAIN → 76.13.179.86 (propagated)
+#   - DNS A record: DOMAIN → api.dcp.sa (propagated)
 #   - DC1 Express API running on port 8083
 
 set -euo pipefail

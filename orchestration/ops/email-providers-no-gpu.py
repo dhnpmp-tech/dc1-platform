@@ -7,13 +7,13 @@ Usage:
     python3 email-providers-no-gpu.py [--dry-run]
 
 Requirements (set as env vars or in .env):
-    SUPABASE_URL          https://fvvxqp-qqjszv6vweybvjfpc.supabase.co
+    SUPABASE_URL          https://<your-project-ref>.supabase.co
     SUPABASE_SERVICE_KEY  <service role key>
     SMTP_HOST             smtp.gmail.com
     SMTP_PORT             587
-    SMTP_USER             nex@dc1st.com
-    SMTP_PASS             <Google Workspace App Password>
-    DC1_API_BASE          http://76.13.179.86:8083   (or public URL when live)
+    SMTP_USER             <smtp-user>
+    SMTP_PASS             <smtp-app-password>
+    DC1_API_BASE          https://api.dcp.sa
 """
 
 import os
@@ -27,9 +27,9 @@ from email.mime.text import MIMEText
 from datetime import datetime
 
 # ── Config ──────────────────────────────────────────────────────────────────
-SUPABASE_URL     = os.getenv("SUPABASE_URL",     "https://fvvxqp-qqjszv6vweybvjfpc.supabase.co")
+SUPABASE_URL     = os.getenv("SUPABASE_URL",     "")
 SUPABASE_SVC_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
-DC1_API_BASE     = os.getenv("DC1_API_BASE",     "http://76.13.179.86:8083")
+DC1_API_BASE     = os.getenv("DC1_API_BASE",     "https://api.dcp.sa")
 
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))

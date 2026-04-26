@@ -13,7 +13,7 @@ Phase 1 of the DCP platform launches the P2P Provider Discovery Network. This gu
 
 **Key Information:**
 - **Launch Date:** 2026-03-26 (Phase 1 testing begins)
-- **Bootstrap Node:** `76.13.179.86:4001`
+- **Bootstrap Node:** `p2p.dcp.sa:4001`
 - **Heartbeat Interval:** Every 30 seconds
 - **Required Configuration:** `P2P_DISCOVERY_ENABLED=true`
 
@@ -110,7 +110,7 @@ P2P_DISCOVERY_ENABLED=true python provider_daemon.py --verbose
 
 ### Phase 1: Bootstrap Deployment (T+0 to T+10 min)
 - DCP deploys P2P bootstrap node
-- Bootstrap listening on `76.13.179.86:4001`
+- Bootstrap listening on `p2p.dcp.sa:4001`
 - Providers with `P2P_DISCOVERY_ENABLED=true` start announcing
 
 ### Phase 2: Configuration Update (T+10 to T+15 min)

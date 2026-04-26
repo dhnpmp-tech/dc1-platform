@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const BACKEND = process.env.BACKEND_URL || 'http://76.13.179.86:8083';
+const BACKEND = process.env.BACKEND_URL || 'https://api.dcp.sa';
 
 function buildBackendUrl(pathSegments: string[], search: string): string {
   const safePath = pathSegments.map((segment) => encodeURIComponent(segment)).join('/');

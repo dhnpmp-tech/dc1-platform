@@ -36,7 +36,7 @@ irm "https://api.dcp.sa/api/providers/download/setup?key=YOUR_KEY&os=windows" | 
 
 If you run your GPU node from residential internet, use WireGuard so the control plane can reach your daemon reliably.
 
-- DCP WireGuard endpoint: `76.13.179.86:51820`
+- DCP WireGuard endpoint: `vpn.dcp.sa:51820`
 - DCP WireGuard server public key: `zVxlVgKwnxq4Z9l6jGgD0yMJH5meHrlodJYyRHrL+wM=`
 
 ### Generate WireGuard keys manually (if needed)

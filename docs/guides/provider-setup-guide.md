@@ -50,7 +50,7 @@ Installer highlights:
 
 If your node is behind residential NAT or you cannot open inbound ports, use WireGuard.
 
-- DCP WireGuard endpoint: `76.13.179.86:51820`
+- DCP WireGuard endpoint: `vpn.dcp.sa:51820`
 - DCP server public key: `zVxlVgKwnxq4Z9l6jGgD0yMJH5meHrlodJYyRHrL+wM=`
 
 If needed, generate keys manually:

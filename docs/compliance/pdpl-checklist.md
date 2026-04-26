@@ -111,7 +111,7 @@ All data subject requests (export, deletion) are logged in the `pdpl_request_log
 
 | Check | Item | Status | Notes |
 |-------|------|--------|-------|
-| 19.1 | Production VPS (76.13.179.86) located in Saudi Arabia | ✅ | KSA-hosted VPS — data stays in-kingdom |
+| 19.1 | Production VPS (api.dcp.sa) located in Saudi Arabia | ✅ | KSA-hosted VPS — data stays in-kingdom |
 | 19.2 | SQLite database stored on VPS (KSA) | ✅ | `backend/data/providers.db` on VPS filesystem |
 | 19.3 | Inference jobs execute on provider GPUs in KSA | ✅ | All registered providers are KSA-based (Phase 1) |
 | 19.4 | Model weights downloaded from HuggingFace — **user data not sent** | ✅ | Only model weights transferred; no renter/provider PII leaves KSA |
@@ -128,7 +128,7 @@ Renter Browser
 api.dcp.sa:443 (nginx)
     │
     ▼ localhost:8083
-Express Backend (VPS · KSA · 76.13.179.86)
+Express Backend (VPS · KSA · api.dcp.sa)
     │
     ├──► SQLite DB (/backend/data/providers.db · KSA)
     │       ├── providers table (provider PII)
@@ -183,7 +183,7 @@ Under PDPL Article 21(3), DCP must notify SDAIA within **72 hours** of becoming 
 6. Full incident report filed within 30 days
 
 **Incident response owner:** Security Engineer
-**Escalation:** CEO → Founder (setup@oida.ae)
+**Escalation:** CEO → Founder (support@dcp.sa)
 **Runbook:** `docs/security/incident-response-runbook.md`
 
 ---

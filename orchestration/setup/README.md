@@ -32,8 +32,8 @@ chmod +x onboard-provider.sh
 
 | Variable | Default | Description |
 |---|---|---|
-| `MC_API_BASE` | `http://76.13.179.86:8084/api` | Mission Control URL |
-| `MC_API_TOKEN` | `dc1-mc-gate0-2026` | Auth token |
+| `MC_API_BASE` | `https://mc.dcp.sa/api` | Mission Control URL |
+| `MC_API_TOKEN` | `YOUR_MC_API_TOKEN` | Auth token |
 | `DC1_SERVER_IP` | Auto-detected | DC1 server public IP |
 | `DC1_AGENT_SECRET` | Auto-generated | Shared secret for agent auth |
 

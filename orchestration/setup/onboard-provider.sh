@@ -16,8 +16,8 @@ set -euo pipefail
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 
 # --- Config ---
-MC_API_BASE="${MC_API_BASE:-http://76.13.179.86:8084/api}"
-MC_API_TOKEN="${MC_API_TOKEN:-dc1-mc-gate0-2026}"
+MC_API_BASE="${MC_API_BASE:-https://mc.dcp.sa/api}"
+MC_API_TOKEN="${MC_API_TOKEN:-YOUR_MC_API_TOKEN}"
 DC1_SERVER_IP="${DC1_SERVER_IP:-$(curl -s ifconfig.me)}"
 DC1_AGENT_SECRET="${DC1_AGENT_SECRET:-$(openssl rand -hex 16)}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

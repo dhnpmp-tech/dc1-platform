@@ -12,7 +12,7 @@ BASELINE_DIR="${REPO_ROOT}/backend/data"
 TIMESTAMP=$(date -u '+%Y%m%d-%H%M%S')
 BASELINE_FILE="${BASELINE_DIR}/baseline-${TIMESTAMP}.json"
 LOG_FILE="${REPO_ROOT}/backend/logs/baseline.log"
-API_BASE="${API_BASE:-http://76.13.179.86:8083/api}"
+API_BASE="${API_BASE:-https://api.dcp.sa/api}"
 
 mkdir -p "${BASELINE_DIR}" "${LOG_FILE%/*}"
 

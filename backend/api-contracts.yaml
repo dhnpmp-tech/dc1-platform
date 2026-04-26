@@ -6,8 +6,8 @@ info:
   contact:
     name: DC1 Team
 servers:
-  - url: http://76.13.179.86:8084/api
-    description: Gate 0 Mission Control
+  - url: https://mc.dcp.sa/api
+    description: Mission Control
 
 security:
   - BearerAuth: []

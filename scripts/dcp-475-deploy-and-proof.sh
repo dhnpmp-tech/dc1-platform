@@ -7,7 +7,7 @@ set -euo pipefail
 #   DCP475_PROOF_ONLY=1 scripts/dcp-475-deploy-and-proof.sh
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VPS_HOST="${DCP475_VPS_HOST:-76.13.179.86}"
+VPS_HOST="${DCP475_VPS_HOST:-api.dcp.sa}"
 VPS_USER="${DCP475_VPS_USER:-root}"
 VPS_REPO_PATH="${DCP475_VPS_REPO_PATH:-/root/dc1-platform}"
 DEPLOY_BRANCH="${DCP475_DEPLOY_BRANCH:-agent/backend-dev/dcp-472-restore-allam-capacity}"

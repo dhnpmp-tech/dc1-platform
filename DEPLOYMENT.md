@@ -33,8 +33,8 @@ git push -u origin main
 In Vercel Dashboard → Settings → Environment Variables, add:
 
 ```
-NEXT_PUBLIC_SUPABASE_URL=https://fvvxqp-qqjszv6vweybvjfpc.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_fQ3SU27BygDby6WzWkjRtA_lQ3C994x
+NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
 ```
 
 ### Step 4: Deploy
@@ -78,8 +78,8 @@ CMD ["npm", "start"]
 ```bash
 docker build -t dc1-platform .
 docker run -p 3000:3000 \
-  -e NEXT_PUBLIC_SUPABASE_URL=https://fvvxqp-qqjszv6vweybvjfpc.supabase.co \
-  -e NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_fQ3SU27BygDby6WzWkjRtA_lQ3C994x \
+  -e NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co \
+  -e NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key \
   dc1-platform
 ```
 
@@ -337,7 +337,7 @@ jobs:
 - Verify ANON_KEY is correct (not SERVICE_ROLE_KEY)
 - Check Supabase project status at https://supabase.com/dashboard
 - Ensure RLS policies allow public read access
-- Test connection: `curl https://fvvxqp-qqjszv6vweybvjfpc.supabase.co`
+- Test connection: `curl https://your-project-ref.supabase.co`
 
 ---
 

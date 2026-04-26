@@ -23,8 +23,8 @@ python daemon.py
 | `SSH_TIMEOUT_SECONDS` | — | `10` | SSH connection timeout |
 | `TEMP_ALERT_THRESHOLD` | — | `80` | °C before HIGH alert |
 | `LATENCY_ALERT_MS` | — | `2000` | ms before HIGH alert |
-| `MC_API_BASE` | — | `http://76.13.179.86:8084/api` | Mission Control URL |
-| `MC_API_TOKEN` | — | `dc1-mc-gate0-2026` | MC auth token |
+| `MC_API_BASE` | — | `https://mc.dcp.sa/api` | Mission Control URL |
+| `MC_API_TOKEN` | — | `YOUR_MC_API_TOKEN` | MC auth token |
 | `TELEGRAM_BOT_TOKEN` | — | — | Bot token for alerts |
 | `TELEGRAM_GROUP_ID` | — | `-5275672778` | Telegram group for alerts |
 
