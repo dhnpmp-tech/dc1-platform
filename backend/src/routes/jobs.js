@@ -3870,6 +3870,24 @@ router.get('/:job_id/output', (req, res) => {
       }
     }
 
+    // Fallback: v1 proxy inference path stores the structured result as plain
+    // JSON in `result` (no DC1_RESULT_JSON: prefix). Without this branch, every
+    // v1:proxy job falls into the raw-text fallback below and the dashboard
+    // detail view loses model/device/tokens/response.
+    if (!structured && typeof job.result === 'string' && job.result.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(job.result);
+        if (parsed && typeof parsed === 'object') {
+          // Normalize legacy `llm_inference` type into the `text` shape the
+          // image/text rendering paths below already understand.
+          if (parsed.type === 'llm_inference') parsed.type = 'text';
+          structured = parsed;
+        }
+      } catch (e) {
+        // Not JSON — leave structured null and fall through to raw text.
+      }
+    }
+
     // If structured image result, serve as image or JSON based on Accept header
     if (structured && structured.type === 'image' && structured.data) {
       // Base64 integrity validation — catch truncated images early
