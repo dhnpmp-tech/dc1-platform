@@ -430,7 +430,16 @@ function getRenterFromReq(req) {
     queryNames: ['renter_key', 'key'],
   });
   if (!key) return null;
-  return db.get('SELECT id FROM renters WHERE api_key = ? AND status = ?', key, 'active') || null;
+  // First match the legacy master key on `renters.api_key`. If that misses,
+  // fall back to the sub-keys table (`renter_api_keys`) so dashboard sub-keys
+  // (`dcp-renter-…`) resolve to the same renter as the legacy master key —
+  // otherwise canReadJob() returns 403 on /api/jobs/:id and the detail view
+  // blanks out model / device / tokens for jobs the user actually owns.
+  const direct = db.get('SELECT id FROM renters WHERE api_key = ? AND status = ?', key, 'active');
+  if (direct) return direct;
+  const ak = db.get('SELECT renter_id FROM renter_api_keys WHERE key = ? AND revoked_at IS NULL', key);
+  if (!ak) return null;
+  return db.get('SELECT id FROM renters WHERE id = ? AND status = ?', ak.renter_id, 'active') || null;
 }
 
 function getProviderFromReq(req) {
