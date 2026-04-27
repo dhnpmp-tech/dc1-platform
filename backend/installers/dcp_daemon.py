@@ -2996,6 +2996,26 @@ MODEL_IDENTITY_TABLE = {
             "Qwen/Qwen3-30B-A3B",
         ],
     },
+    "qwen3-8b": {
+        "canonical": "Qwen/Qwen3-8B",
+        "ollama": "qwen3:8b",
+        "vllm_variants": ["Qwen/Qwen3-8B", "Qwen/Qwen3-8B-Instruct"],
+        "hf_formats": [
+            "Qwen/Qwen3-8B",
+            "Qwen/Qwen3-8B-Instruct",
+            "mlx-community/Qwen3-8B-4bit",
+        ],
+    },
+    "qwen3-4b": {
+        "canonical": "Qwen/Qwen3-4B",
+        "ollama": "qwen3:4b",
+        "vllm_variants": ["Qwen/Qwen3-4B", "Qwen/Qwen3-4B-Instruct"],
+        "hf_formats": [
+            "Qwen/Qwen3-4B",
+            "Qwen/Qwen3-4B-Instruct",
+            "mlx-community/Qwen3-4B-4bit",
+        ],
+    },
     "jais-13b": {
         "canonical": "inceptionai/jais-13b-chat",
         "ollama": "jais:13b",
