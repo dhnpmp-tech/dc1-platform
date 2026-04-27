@@ -998,6 +998,8 @@ function GpuPlayground() {
     try {
       // For LLM inference: use /v1/chat/completions directly (fast, streaming, no Docker)
       if (jobType === 'llm_inference') {
+        const startedAt = new Date();
+        const t0 = performance.now();
         const inferenceRes = await fetch('https://api.dcp.sa/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -1020,6 +1022,8 @@ function GpuPlayground() {
         }
 
         const inferenceData = await inferenceRes.json();
+        const wallMs = performance.now() - t0;
+        const completedAt = new Date();
         const content = inferenceData.choices?.[0]?.message?.content
           || inferenceData.choices?.[0]?.message?.reasoning_content
           || '';
@@ -1033,15 +1037,26 @@ function GpuPlayground() {
         const providerGpu = inferenceRes.headers.get('x-dcp-provider-endpoint-host') || 'GPU';
         const providerIdHeader = inferenceRes.headers.get('x-dcp-provider-id') || '';
 
+        // Use upstream timings if present (llama.cpp), else wall-clock (Ollama doesn't include them)
+        const genTimeS = timings.predicted_ms
+          ? timings.predicted_ms / 1000
+          : Math.round((wallMs / 1000) * 10) / 10;
+        const completionTokens = usage.completion_tokens || 0;
+        const tokensPerSec = timings.predicted_per_second
+          ? timings.predicted_per_second
+          : (genTimeS > 0 && completionTokens > 0
+              ? Math.round((completionTokens / genTimeS) * 10) / 10
+              : 0);
+
         setResult({
-          type: 'llm_inference',
+          type: 'text',
           prompt: prompt.trim(),
           response: content,
           model: inferenceData.model || llmModel,
-          tokens_generated: usage.completion_tokens || 0,
-          tokens_per_second: timings.predicted_per_second || 0,
-          gen_time_s: timings.predicted_ms ? timings.predicted_ms / 1000 : 0,
-          total_time_s: timings.predicted_ms ? timings.predicted_ms / 1000 : 0,
+          tokens_generated: completionTokens,
+          tokens_per_second: tokensPerSec,
+          gen_time_s: genTimeS,
+          total_time_s: genTimeS,
           device: providerGpu,
           billing: {
             actual_cost_halala: usage.pricing?.usd_total ? Math.round(parseFloat(usage.pricing.usd_total) * 375) : 1,
@@ -1051,17 +1066,15 @@ function GpuPlayground() {
         // Populate Execution Proof panel for v1 inference path (no polling, no /jobs/:id/proof)
         const inferProvider = providerId ? providers.find((p) => p.id === providerId) || null : null;
         const costH = usage.pricing?.usd_total ? Math.round(parseFloat(usage.pricing.usd_total) * 375) : 1;
-        const nowIso = new Date().toISOString();
-        const durationMin = timings.predicted_ms ? timings.predicted_ms / 60000 : 0;
         setProof({
           job_id: chatcmplId || '',
           provider_name: inferProvider?.name || providerGpu || 'Unknown',
           provider_gpu: inferProvider?.gpu_model || providerGpu || 'GPU',
           provider_hostname: inferProvider?.name || providerGpu || '',
           status: 'completed',
-          started_at: nowIso,
-          completed_at: nowIso,
-          actual_duration_minutes: durationMin,
+          started_at: startedAt.toISOString(),
+          completed_at: completedAt.toISOString(),
+          actual_duration_minutes: wallMs / 60000,
           cost_halala: costH,
           provider_earned_halala: Math.round(costH * 0.75),
           dc1_fee_halala: Math.round(costH * 0.25),
