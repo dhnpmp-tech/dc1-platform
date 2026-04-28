@@ -817,6 +817,7 @@ router.post('/heartbeat', heartbeatProviderLimiter, (req, res) => {
             model_cache,
             vllm_endpoint_url,   // DCP-922
             vllm_models,
+            wg_mesh_ip,          // Audit H5: WireGuard mesh IP advertised by daemon
         } = req.body;
         const cleanApiKey = normalizeString(api_key, { maxLen: 128, trim: false });
         if (!cleanApiKey) return res.status(400).json({ error: 'api_key required' });
@@ -877,6 +878,17 @@ router.post('/heartbeat', heartbeatProviderLimiter, (req, res) => {
             }
         }
 
+        // Audit H5: validate WireGuard mesh IP. Only accept dotted-quad IPv4
+        // strings — anything else is dropped silently so a malformed daemon
+        // payload can't poison the providers row.
+        let cleanWgMeshIp = null;
+        if (wg_mesh_ip) {
+            const rawIp = normalizeString(wg_mesh_ip, { maxLen: 64, trim: true });
+            if (rawIp && /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(rawIp)) {
+                cleanWgMeshIp = rawIp;
+            }
+        }
+
         const now = new Date().toISOString();
 
         // Verify API key (sync — better-sqlite3)
@@ -934,7 +946,8 @@ router.post('/heartbeat', heartbeatProviderLimiter, (req, res) => {
           model_cache_disk_used_pct = ?,
           gpu_profile_source = 'daemon',
           gpu_profile_updated_at = ?,
-          vllm_endpoint_url = COALESCE(?, vllm_endpoint_url)
+          vllm_endpoint_url = COALESCE(?, vllm_endpoint_url),
+          wg_mesh_ip = COALESCE(?, wg_mesh_ip)
           WHERE id = ?`,
           JSON.stringify(normalizedGpuStatus || {}), providerIp || null, providerHostname || null, now, providerRuntimeStatus,
           peerId || p.p2p_peer_id,
@@ -952,6 +965,7 @@ router.post('/heartbeat', heartbeatProviderLimiter, (req, res) => {
           modelCacheUsedPct,
           now,
           cleanVllmEndpointUrl,
+          cleanWgMeshIp,
           p.id
         );
 

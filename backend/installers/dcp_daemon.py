@@ -104,7 +104,7 @@ HEARTBEAT_BACKOFF_BASE = 2.0         # double each consecutive failure
 JOB_POLL_INTERVAL = 10    # seconds
 JOB_POLL_JITTER_PCT = 0.10           # ±10% jitter on poll sleep
 UPDATE_CHECK_JITTER_PCT = 0.20       # ±20% jitter on update-check sleep
-DAEMON_VERSION = "4.2.1"
+DAEMON_VERSION = "4.2.2"
 MAX_STDOUT = 2097152       # 2 MB stdout capture (for base64 image results)
 JOB_TIMEOUT = 900          # 15 min default job timeout (model downloads can be slow)
 RESULT_POST_TIMEOUT = 120  # 2 min for uploading results (large base64 images)
@@ -1119,23 +1119,122 @@ def _resolve_download_url(download_url):
         return f"{CANONICAL_API_BASE_URL}{url}"
     return None
 
+_WG_MESH_SUBNET_RE = re.compile(r'^10\.8\.\d{1,3}\.\d{1,3}$')
+
+
+def _detect_wg_mesh_ip():
+    """Detect this provider's WireGuard mesh IP (10.8.0.0/24) if any.
+
+    Returns the IPv4 string assigned to the local end of the wg0 tunnel, or
+    None if no WireGuard interface is present. Used by the heartbeat payload
+    so the backend can prefer the mesh address over the public vllm endpoint.
+
+    Strategy (best portable, no extra deps):
+      1) Linux: parse `ip -4 -o addr show dev wg0`.
+      2) Windows: parse `wg show wg0` then fall back to `netsh interface
+         ipv4 show ipaddresses`.
+      3) macOS: parse `ifconfig` for an inet in 10.8.0.0/24 (WG on Mac uses
+         utunN names, not wg0, so the subnet match is the only reliable cue).
+      4) Linux fallback: `ip -4 -o addr` and pick first 10.8.0.0/24 match.
+    """
+    system = platform.system()
+
+    if system == "Linux":
+        try:
+            r = subprocess.run(
+                ["ip", "-4", "-o", "addr", "show", "dev", "wg0"],
+                capture_output=True, text=True, timeout=3,
+            )
+            if r.returncode == 0:
+                m = re.search(r'inet (\d+\.\d+\.\d+\.\d+)/', r.stdout or "")
+                if m and _WG_MESH_SUBNET_RE.match(m.group(1)):
+                    return m.group(1)
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            pass
+        except Exception as e:
+            log.debug(f"ip addr show wg0 failed: {e}")
+
+        # Fallback: scan all interfaces for any 10.8.0.0/24 address.
+        try:
+            r = subprocess.run(
+                ["ip", "-4", "-o", "addr"],
+                capture_output=True, text=True, timeout=3,
+            )
+            for m in re.finditer(r'inet (10\.8\.\d{1,3}\.\d{1,3})/', r.stdout or ""):
+                return m.group(1)
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            pass
+        except Exception as e:
+            log.debug(f"WG mesh interface scan (Linux) failed: {e}")
+        return None
+
+    if system == "Windows":
+        # `wg show wg0` prints "address: 10.8.0.X/24" when a wg-quick managed
+        # interface exists; the bundled WireGuard for Windows GUI also shows
+        # it but uses tunnel names rather than wg0. The 10.8.x.x match below
+        # catches both.
+        for cmd in (
+            ["wg", "show", "wg0"],
+            ["netsh", "interface", "ipv4", "show", "ipaddresses"],
+        ):
+            try:
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=3)
+                m = re.search(r'(10\.8\.\d{1,3}\.\d{1,3})', r.stdout or "")
+                if m:
+                    return m.group(1)
+            except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+                continue
+            except Exception as e:
+                log.debug(f"WG mesh probe via {cmd[0]} failed: {e}")
+                continue
+        return None
+
+    if system == "Darwin":
+        try:
+            r = subprocess.run(
+                ["ifconfig"],
+                capture_output=True, text=True, timeout=3,
+            )
+            m = re.search(r'inet (10\.8\.\d{1,3}\.\d{1,3})\b', r.stdout or "")
+            if m:
+                return m.group(1)
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            pass
+        except Exception as e:
+            log.debug(f"WG mesh ifconfig probe (Darwin) failed: {e}")
+
+    return None
+
+
 def _detect_nvidia_windows_fallback():
     """Windows fallback when `nvidia-smi` is not on PATH.
 
     Returns (gpu_name, vram_mib, driver_version) tuple or None.
 
-    Strategy:
-      1) Try C:\\Windows\\System32\\nvidia-smi.exe (standard driver install path).
-      2) Query the display-adapter registry for qwMemorySize (uint64; the
-         authoritative VRAM size written by the driver). Avoids the WMI
-         AdapterRAM uint32 overflow that caps at 4 GB.
-      3) Give up and return None — never guess VRAM from a substring match.
+    Audit H4 chain — never silently fall back to CPU after a single failure:
+      1) shutil.which('nvidia-smi') + standard absolute install paths.
+      2) Display-adapter registry qwMemorySize (uint64; avoids the WMI
+         AdapterRAM uint32 overflow that caps at 4 GB).
+      3) `Get-CimInstance Win32_VideoController` PowerShell — last resort.
+         AdapterRAM is uint32 so cards >4 GB report 4 GB; surfaces the GPU
+         name and driver version correctly which is what the backend needs
+         to avoid mis-classifying the provider as CPU-only.
+      4) Give up and return None.
     """
-    # (1) nvidia-smi.exe at absolute path
-    for abs_path in (
+    # (1) shutil.which + absolute paths
+    candidates = []
+    found = shutil.which("nvidia-smi")
+    if found:
+        candidates.append(found)
+    candidates.extend([
         r"C:\Windows\System32\nvidia-smi.exe",
         r"C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe",
-    ):
+    ])
+    seen_paths = set()
+    for abs_path in candidates:
+        if abs_path in seen_paths:
+            continue
+        seen_paths.add(abs_path)
         try:
             r = subprocess.run(
                 [abs_path, "--query-gpu=name,memory.total,driver_version",
@@ -1149,13 +1248,14 @@ def _detect_nvidia_windows_fallback():
                     name = parts[0]
                     vram_mib = int(float(parts[1]))
                     driver = parts[2] if len(parts) > 2 else "unknown"
-                    log.info(f"GPU detected via nvidia-smi.exe absolute path: {name} ({vram_mib} MiB)")
+                    log.info(f"GPU detected via nvidia-smi at {abs_path}: {name} ({vram_mib} MiB)")
                     return (name, vram_mib, driver)
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
             continue
         except Exception as e:
-            log.debug(f"nvidia-smi.exe at {abs_path} failed: {e}")
+            log.warning(f"nvidia-smi at {abs_path} failed: {e}; trying next method")
             continue
+    log.warning("nvidia-smi not found via PATH or absolute paths; trying registry qwMemorySize")
 
     # (2) Registry — iterate display-adapter subkeys and emit qwMemorySize (uint64)
     try:
@@ -1192,15 +1292,60 @@ def _detect_nvidia_windows_fallback():
             vram_mib = vram_bytes // (1024 * 1024)
             log.info(f"GPU detected via registry qwMemorySize: {name} ({vram_mib} MiB)")
             return (name, vram_mib, driver)
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
+        log.warning("registry qwMemorySize returned no NVIDIA entries; trying Win32_VideoController")
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        log.warning(f"registry qwMemorySize probe unavailable ({e.__class__.__name__}); trying Win32_VideoController")
     except Exception as e:
-        log.debug(f"registry qwMemorySize probe failed: {e}")
+        log.warning(f"registry qwMemorySize probe failed: {e}; trying Win32_VideoController")
+
+    # (3) Win32_VideoController via Get-CimInstance. AdapterRAM is uint32 so
+    # cards with >4 GB VRAM are truncated; we still report it because name
+    # and driver version are correct, and any positive VRAM is preferable to
+    # marking the provider CPU-only.
+    try:
+        ps_script = (
+            r"Get-CimInstance -ClassName Win32_VideoController -ErrorAction SilentlyContinue | "
+            r"Where-Object { $_.Name -like '*NVIDIA*' } | "
+            r"ForEach-Object { Write-Output ($_.Name + '|' + $_.AdapterRAM + '|' + $_.DriverVersion) }"
+        )
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
+            capture_output=True, text=True, timeout=10,
+        )
+        for line in (r.stdout or "").splitlines():
+            line = line.strip()
+            if not line or "|" not in line:
+                continue
+            parts = line.split("|")
+            if not parts or not parts[0].strip():
+                continue
+            name = parts[0].strip()
+            ram_raw = parts[1].strip() if len(parts) > 1 else ""
+            driver = parts[2].strip() if len(parts) > 2 and parts[2].strip() else "unknown"
+            try:
+                ram_bytes = int(ram_raw) if ram_raw else 0
+            except ValueError:
+                ram_bytes = 0
+            vram_mib = ram_bytes // (1024 * 1024) if ram_bytes > 0 else 0
+            # uint32 ceiling check: AdapterRAM = 4294967295 bytes ≈ 4096 MiB.
+            if 4090 <= vram_mib <= 4100:
+                log.warning(
+                    f"Win32_VideoController reported {vram_mib} MiB for {name} — "
+                    f"likely uint32 truncation. Reporting as a lower bound; install "
+                    f"nvidia-smi for accurate VRAM."
+                )
+            log.info(f"GPU detected via Win32_VideoController: {name} ({vram_mib} MiB)")
+            return (name, vram_mib, driver)
+        log.warning("Win32_VideoController returned no NVIDIA entries")
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        log.warning(f"Win32_VideoController probe unavailable: {e.__class__.__name__}")
+    except Exception as e:
+        log.warning(f"Win32_VideoController probe failed: {e}")
 
     log.warning(
         "Windows NVIDIA GPU detection failed: nvidia-smi not in PATH, "
-        "absolute-path binaries missing, and registry qwMemorySize unavailable. "
-        "Refusing to guess VRAM."
+        "absolute-path binaries missing, registry qwMemorySize unavailable, "
+        "and Win32_VideoController returned no NVIDIA entries. Falling back to CPU."
     )
     return None
 
@@ -4477,6 +4622,15 @@ def send_heartbeat(final=False, status=None):  # returns HTTP status code or Non
             "served_model": os.environ.get("DCP_SERVED_MODEL", ""),
             "engine": os.environ.get("DCP_ENGINE", ""),
         }
+        # Audit H5: announce WireGuard mesh IP so the backend can prefer the
+        # mesh address over the public vllm_endpoint_url for inference proxy.
+        # None when no wg interface is up — backend treats absence as "no mesh".
+        try:
+            wg_ip = _detect_wg_mesh_ip()
+            if wg_ip:
+                payload["wg_mesh_ip"] = wg_ip
+        except Exception as _wg_err:
+            log.debug(f"_detect_wg_mesh_ip failed: {_wg_err}")
         # Include bandwidth stats if available
         with _bw_lock:
             if _bandwidth_stats.get("download_mbps") is not None:
