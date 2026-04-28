@@ -647,8 +647,20 @@ function buildDeploySubmitPayload(model, options = {}) {
 //   min_vram_gb=N / vram=N             — only models requiring <= N GB VRAM (renter GPU fits model)
 //   category=llm|embedding|image|training  — filter by task type
 //   tier=tier_a|tier_b|tier_c|instant  — filter by portfolio tier (instant maps to prewarm_class=hot)
+//   include_unavailable=true           — include models with 0 online providers (default: hide)
 function applyQueryFilters(models, query) {
   let result = models;
+
+  // Default: hide models with no online providers so renters don't see
+  // catalog entries they cannot actually rent. Set include_unavailable=true
+  // (or available_only=false) to see the full registry.
+  const includeUnavailable = String(query.include_unavailable || '').toLowerCase();
+  const availableOnly = String(query.available_only || '').toLowerCase();
+  const showAll = includeUnavailable === 'true' || includeUnavailable === '1'
+    || availableOnly === 'false' || availableOnly === '0';
+  if (!showAll) {
+    result = result.filter((m) => Number(m.availability?.providers_online || 0) > 0);
+  }
 
   // arabic=true is a short alias for arabic_capable=true
   const arabicFlag = String(query.arabic_capable || query.arabic || '').toLowerCase();
