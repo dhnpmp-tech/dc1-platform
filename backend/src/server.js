@@ -292,13 +292,58 @@ function rejectRenterQueryParamKey(req, res, next) {
   next();
 }
 
-// Log all API key credential usage in query params (non-blocking, for audit trail)
-app.use((req, _res, next) => {
+// Audit C1 — query-param API key deprecation telemetry.
+//
+// Background: Nexus/Tito audit C1 flagged that every endpoint accepting
+// `?key=`, `?renter_key=`, `?provider_key=`, or `?api_key=` leaks credentials
+// into browser history, server access logs, referrer headers, and proxy logs.
+// Full removal is blocked: 60+ backend handlers, 30+ frontend call sites
+// (server.js:306 note), and the Tauri installer URLs in already-shipped .exes.
+//
+// This middleware ships the C1 "phase 1" mitigation:
+//   - Sets `Deprecation: true`, `Sunset: <today + 30d>`, and `Link: rel=deprecation`
+//     response headers when a query-param credential is observed.
+//   - Logs each occurrence (rate-limited to 1/min per req.path) so we can
+//     measure migration blast radius before phase 2 (refuse query-param keys).
+//
+// `?key=` clients keep working through the sunset window. Phase 2 is a
+// separate change once the per-path log telemetry shows the call sites are
+// migrated.
+const C1_SUNSET_DAYS = 30;
+const C1_SUNSET_MS = C1_SUNSET_DAYS * 24 * 60 * 60 * 1000;
+const C1_DEPRECATION_DOC_URL = 'https://api.dcp.sa/docs/auth#bearer';
+const _c1LastLogByPath = new Map(); // path → last-log-ms
+const C1_LOG_THROTTLE_MS = 60 * 1000;
+
+function _c1ShouldLog(reqPath) {
+  const now = Date.now();
+  const last = _c1LastLogByPath.get(reqPath) || 0;
+  if (now - last < C1_LOG_THROTTLE_MS) return false;
+  _c1LastLogByPath.set(reqPath, now);
+  // Bound the map so a flood of unique paths can't grow it unboundedly.
+  if (_c1LastLogByPath.size > 1024) {
+    const cutoff = now - C1_LOG_THROTTLE_MS;
+    for (const [k, v] of _c1LastLogByPath) {
+      if (v < cutoff) _c1LastLogByPath.delete(k);
+    }
+  }
+  return true;
+}
+
+app.use((req, res, next) => {
   const detected = detectQueryParamKeys(req);
   if (detected.any) {
-    console.warn(
-      `[security] Credential in URL query params detected: ${req.method} ${req.path} ip=${req.ip || 'unknown'}`
-    );
+    // RFC 8594 (Sunset) + draft-ietf-httpapi-deprecation-header
+    res.setHeader('Deprecation', 'true');
+    res.setHeader('Sunset', new Date(Date.now() + C1_SUNSET_MS).toUTCString());
+    res.setHeader('Link', `<${C1_DEPRECATION_DOC_URL}>; rel="deprecation"`);
+
+    if (_c1ShouldLog(req.path)) {
+      const which = detected.hasRenterKey ? 'renter' : detected.hasProviderKey ? 'provider' : 'shared';
+      console.warn(
+        `[c1-deprecation] ?${which}_key= used: ${req.method} ${req.path} ip=${req.ip || 'unknown'} — clients should migrate to Authorization: Bearer (sunset ${C1_SUNSET_DAYS}d)`
+      );
+    }
   }
   next();
 });
