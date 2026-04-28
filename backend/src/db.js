@@ -1047,6 +1047,9 @@ const migrations = [
   'ALTER TABLE jobs ADD COLUMN compute_halala INTEGER DEFAULT 0',
   'ALTER TABLE jobs ADD COLUMN storage_halala INTEGER DEFAULT 0',
   'ALTER TABLE jobs ADD COLUMN bandwidth_halala INTEGER DEFAULT 0',
+  // Audit H5: WireGuard mesh IP advertised by the daemon. When set, v1.js
+  // prefers it over vllm_endpoint_url so traffic stays on the mesh.
+  'ALTER TABLE providers ADD COLUMN wg_mesh_ip TEXT',
 ];
 
 migrations.forEach(sql => {
