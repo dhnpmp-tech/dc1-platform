@@ -38,6 +38,100 @@ const VLLM_COMPATIBILITY_MATRIX_PATH = path.join(__dirname, '../../../infra/vllm
 const TOKEN_RATE_BILLING_UNIT_TOKENS = 1_000_000;
 const DEFAULT_TOKEN_RATE_HALALA = 19;
 
+// ── Idempotency cache for /v1/chat/completions (H6) ─────────────────────────
+// Tunnel timeouts cause renter SDKs to retry, which without dedup would create
+// two upstream inferences and bill twice. We cache `Idempotency-Key` results
+// per renter for IDEMPOTENCY_TTL_MS so a retry within the window either joins
+// the in-flight Promise or returns the cached non-streaming response.
+//
+// Notes & limits:
+//   • Streaming responses are NOT cached (no way to replay an SSE body); a
+//     stream retry currently bypasses the cache and is logged.
+//   • Keys are scoped by renter_id so two renters can use the same key.
+//   • Memory only — survives PM2 restart only via fresh requests.
+const IDEMPOTENCY_TTL_MS = Math.max(
+  10_000,
+  Number(process.env.DCP_IDEMPOTENCY_TTL_MS) || 60_000
+);
+const IDEMPOTENCY_MAX_ENTRIES = 5_000;
+const _idempotencyCache = new Map(); // `${renterId}:${key}` -> { promise?, response?, statusCode?, settledAt }
+
+function _idempotencyKey(renterId, key) {
+  return `${Number(renterId) || 0}:${String(key).slice(0, 200)}`;
+}
+function _idempotencySweep() {
+  if (_idempotencyCache.size <= IDEMPOTENCY_MAX_ENTRIES) return;
+  const now = Date.now();
+  for (const [k, v] of _idempotencyCache) {
+    if (v.settledAt && (now - v.settledAt) > IDEMPOTENCY_TTL_MS) _idempotencyCache.delete(k);
+  }
+  // If still over cap, drop the oldest entries.
+  if (_idempotencyCache.size > IDEMPOTENCY_MAX_ENTRIES) {
+    const overflow = _idempotencyCache.size - IDEMPOTENCY_MAX_ENTRIES;
+    let dropped = 0;
+    for (const k of _idempotencyCache.keys()) {
+      _idempotencyCache.delete(k);
+      if (++dropped >= overflow) break;
+    }
+  }
+}
+function getIdempotencyEntry(renterId, key) {
+  if (!key) return null;
+  const k = _idempotencyKey(renterId, key);
+  const entry = _idempotencyCache.get(k);
+  if (!entry || !entry.settledAt) return null;
+  if ((Date.now() - entry.settledAt) > IDEMPOTENCY_TTL_MS) {
+    _idempotencyCache.delete(k);
+    return null;
+  }
+  return entry;
+}
+function settleIdempotencyEntry(renterId, key, { response, statusCode = 200 }) {
+  if (!key) return;
+  _idempotencySweep();
+  _idempotencyCache.set(_idempotencyKey(renterId, key), {
+    response,
+    statusCode,
+    settledAt: Date.now(),
+  });
+}
+
+// ── Per-provider in-flight gate (H3) ────────────────────────────────────────
+// Ollama on consumer GPUs serializes requests; if two renters land on the same
+// provider concurrently the second one blocks until the first finishes and
+// then trips PROXY_TIMEOUT_PER_TOKEN_MS. We keep an in-memory counter per
+// provider id and refuse new traffic while a slot is busy. Default is 1
+// in-flight per provider (Ollama-safe); raise via env for vLLM continuous
+// batching when you trust the provider can absorb concurrent decode.
+const MAX_INFLIGHT_PER_PROVIDER = Math.max(
+  1,
+  Number(process.env.DCP_PROVIDER_MAX_INFLIGHT) || 1
+);
+const _inflightByProvider = new Map();
+function _providerInflightCount(providerId) {
+  const id = Number(providerId);
+  if (!id) return 0;
+  return _inflightByProvider.get(id) || 0;
+}
+function isProviderBusy(providerId) {
+  return _providerInflightCount(providerId) >= MAX_INFLIGHT_PER_PROVIDER;
+}
+function acquireProviderSlot(providerId) {
+  const id = Number(providerId);
+  if (!id) return false;
+  const cur = _inflightByProvider.get(id) || 0;
+  if (cur >= MAX_INFLIGHT_PER_PROVIDER) return false;
+  _inflightByProvider.set(id, cur + 1);
+  return true;
+}
+function releaseProviderSlot(providerId) {
+  const id = Number(providerId);
+  if (!id) return;
+  const cur = _inflightByProvider.get(id) || 0;
+  if (cur <= 1) _inflightByProvider.delete(id);
+  else _inflightByProvider.set(id, cur - 1);
+}
+
 // ── Helpers (shared with vllm.js — keep lightweight to avoid circular deps) ──
 
 function normalizeString(value, { maxLen = 500, trim = true } = {}) {
@@ -567,6 +661,33 @@ const PROXY_TIMEOUT_BASE_MS = 30000;
 const PROXY_TIMEOUT_PER_TOKEN_MS = 150;
 const PROXY_TIMEOUT_MAX_MS = 300000; // 5 min hard cap
 
+// M8 — per-class hard timeout caps. Reasoning models can legitimately spend
+// minutes generating; vision models should respond fast on short prompts;
+// chat is the middle of the road. Without per-class caps, a runaway chat
+// completion can pin a provider for 5 minutes when 90s is already abnormal.
+const PROXY_TIMEOUT_CAP_BY_CLASS_MS = {
+  vision: 60_000,
+  chat: 90_000,
+  reasoning: 300_000,
+};
+function classifyModelClass(modelId) {
+  const id = String(modelId || '').toLowerCase();
+  if (!id) return 'chat';
+  if (/(^|[-_/])(vl|vision|llava|moondream|gemma3|gemini-pro-vision|qwen.*vl)/.test(id)) return 'vision';
+  if (/(^|[-_/])(o1|o3|deepseek-r1|qwen.*qwq|qwq|reasoner|thinking)/.test(id)) return 'reasoning';
+  // qwen3 thinking-mode is opt-in via /v1 think:true; default the family to chat.
+  return 'chat';
+}
+function resolveProxyTimeoutMs(modelId, maxTokens) {
+  const cls = classifyModelClass(modelId);
+  const cap = PROXY_TIMEOUT_CAP_BY_CLASS_MS[cls] || PROXY_TIMEOUT_MAX_MS;
+  return Math.min(
+    PROXY_TIMEOUT_BASE_MS + (maxTokens || 0) * PROXY_TIMEOUT_PER_TOKEN_MS,
+    cap,
+    PROXY_TIMEOUT_MAX_MS
+  );
+}
+
 function parseComputeTypes(raw) {
   if (!raw) return new Set(['inference', 'training', 'rendering']);
   if (Array.isArray(raw)) {
@@ -973,7 +1094,7 @@ async function proxyToProvider({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(Math.min(PROXY_TIMEOUT_BASE_MS + (maxTokens || 0) * PROXY_TIMEOUT_PER_TOKEN_MS, PROXY_TIMEOUT_MAX_MS)),
+      signal: AbortSignal.timeout(resolveProxyTimeoutMs(effectiveModelId, maxTokens)),
     });
   } catch (err) {
     return { proxyError: err.name === 'TimeoutError' ? 'timeout' : 'connection_refused', detail: err.message };
@@ -992,6 +1113,16 @@ async function proxyToProvider({
 
 router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res) => {
   let persistFailureUsageBestEffort = null;
+  // H3 — track every provider slot we hold during this request so we can
+  // release them in a single finally regardless of which return path fires.
+  const acquiredSlots = new Set();
+  const tryAcquireSlot = (providerId) => {
+    if (acquireProviderSlot(providerId)) {
+      acquiredSlots.add(Number(providerId));
+      return true;
+    }
+    return false;
+  };
   try {
     const model = normalizeString(req.body?.model, { maxLen: 200 });
     if (!model) return sendV1Error(res, {
@@ -1060,6 +1191,21 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
     const temperature = toFiniteNumber(req.body?.temperature, { min: 0, max: 2 }) ?? 0.7;
     const wantsStream = !!req.body?.stream;
 
+    // H6 — Idempotency-Key replay. If the renter retries with the same key
+    // within IDEMPOTENCY_TTL_MS, return the cached response instead of
+    // creating a second upstream call (and a second bill). Streaming
+    // responses are not cacheable — let those retries through.
+    const idempotencyKey = !wantsStream
+      ? normalizeString(req.headers['idempotency-key'], { maxLen: 200, trim: true })
+      : null;
+    if (idempotencyKey) {
+      const cached = getIdempotencyEntry(req.renter.id, idempotencyKey);
+      if (cached) {
+        res.setHeader('Idempotent-Replayed', 'true');
+        return res.status(cached.statusCode || 200).json(cached.response);
+      }
+    }
+
     // Extract function calling params (Gap 4)
     const hasTools = Object.prototype.hasOwnProperty.call(req.body || {}, 'tools');
     const hasToolChoice = Object.prototype.hasOwnProperty.call(req.body || {}, 'tool_choice');
@@ -1116,9 +1262,24 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       });
     }
 
+    // H3 — per-provider in-flight gate. Drop providers already serving a
+    // request; if every capable provider is busy, surface 503 with
+    // Retry-After so the client backs off instead of stacking on Ollama.
+    const freeProviders = capableProviders.filter((p) => !isProviderBusy(p.id));
+    if (freeProviders.length === 0) {
+      res.setHeader('Retry-After', '5');
+      return sendV1Error(res, {
+        status: 503,
+        type: 'server_error',
+        code: 'all_providers_busy',
+        message: `All providers for '${model}' are serving other requests. Retry shortly.`,
+        retryable: true,
+      });
+    }
+
     const gateSelection = selectProvidersWithLatencyGate({
       db,
-      providers: capableProviders,
+      providers: freeProviders,
     });
     if (!gateSelection.pass || !gateSelection.selectedProviderId) {
       return sendV1Error(res, {
@@ -1308,6 +1469,19 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       const routedModelId = assignedProviderProxyModel.proxyModelId;
 
       const proxyStartedAt = new Date().toISOString();
+      // H3 — claim the in-flight slot for this provider before issuing the
+      // upstream call. The free-list filter above means we should normally
+      // win, but a parallel request could have grabbed it in the same tick.
+      if (!tryAcquireSlot(assignedProvider.id)) {
+        res.setHeader('Retry-After', '5');
+        return sendV1Error(res, {
+          status: 503,
+          type: 'server_error',
+          code: 'all_providers_busy',
+          message: 'Provider became busy between selection and dispatch. Retry shortly.',
+          retryable: true,
+        });
+      }
       const proxyResult = await proxyToProvider({
         endpointUrl: assignedProvider.vllm_endpoint_url,
         modelId: routedModelId,
@@ -1431,10 +1605,19 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
             }
           }
         }
-        return res.json({
+        const finalBody = {
           ...resultBody,
           usage: usageForResponse,
-        });
+        };
+        // H6 — cache successful proxy responses keyed by Idempotency-Key so
+        // a retry within the TTL replays without re-billing.
+        if (idempotencyKey) {
+          settleIdempotencyEntry(req.renter.id, idempotencyKey, {
+            response: finalBody,
+            statusCode: 200,
+          });
+        }
+        return res.json(finalBody);
       };
 
       const writeStreamingResponse = async (streamResponse, providerForUsage) => {
@@ -1643,6 +1826,10 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         });
         if (!fallbackProxyModel.eligible) continue;
 
+        // H3 — skip fallback providers that are already serving traffic
+        // rather than stacking onto a busy Ollama instance.
+        if (!tryAcquireSlot(fallbackProvider.id)) continue;
+
         const fallbackResult = await proxyToProvider({
           endpointUrl: fallbackProvider.vllm_endpoint_url,
           modelId: fallbackProxyModel.proxyModelId,
@@ -1837,6 +2024,12 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       message: 'Internal server error',
       retryable: false,
     });
+  } finally {
+    // H3 — always release any in-flight slots we acquired, even on early
+    // return / thrown error / streaming-write failures. Without this the
+    // counter would leak and the provider would appear permanently busy.
+    for (const id of acquiredSlots) releaseProviderSlot(id);
+    acquiredSlots.clear();
   }
 });
 
