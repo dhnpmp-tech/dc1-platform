@@ -49,12 +49,19 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install pytest only (daemon itself is stdlib-only)
+      - name: Install pytest + test-only deps (daemon itself is stdlib-only)
         run: |
           python -m pip install --upgrade pip
           # pytest 8.4.x dropped Python 3.8 support; 8.3.x is the last line
           # that supports our oldest matrix entry. Pin minor, allow patch.
           python -m pip install 'pytest>=8.3,<8.4'
+          # `requests` is an optional runtime import for the daemon (the
+          # HAS_REQUESTS gate falls back to urllib when missing) but several
+          # tests (test_ollama_integrity_v424.py) patch
+          # `dcp_daemon.requests.post` via monkeypatch. Without `requests`
+          # installed, the attribute does not exist on the module and tests
+          # AttributeError before exercising the code under test.
+          python -m pip install 'requests>=2.28'
 
       - name: Run daemon tests
         working-directory: backend/installers
