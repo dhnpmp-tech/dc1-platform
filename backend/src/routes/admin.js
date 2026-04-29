@@ -4850,4 +4850,24 @@ router.get('/errors', (req, res) => {
   }
 });
 
+// ── GET /api/admin/demand — per-model demand dashboard (Mesh-LLM) ───────────
+// Reads the in-memory 5-min sliding window demand counters from the v1 router.
+// Lazy-loaded to avoid circular-require at module init time.
+let _v1DemandFn = null;
+router.get('/demand', (req, res) => {
+  try {
+    if (!_v1DemandFn) {
+      const v1Router = require('./v1');
+      _v1DemandFn = typeof v1Router.getAllDemand === 'function' ? v1Router.getAllDemand : null;
+    }
+    if (!_v1DemandFn) {
+      return res.json({ error: 'Demand tracking not available', demand: {} });
+    }
+    return res.json({ demand: _v1DemandFn() });
+  } catch (error) {
+    console.error('[admin/demand]', error);
+    return res.status(500).json({ error: 'Failed to fetch demand data' });
+  }
+});
+
 module.exports = router;
