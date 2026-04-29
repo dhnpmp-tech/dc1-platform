@@ -742,11 +742,12 @@ describe('v1 models route', () => {
 
     expect(res.status).toBe(503);
     expect(res.body.error).toMatchObject({
-      type: 'server_error',
-      code: 'no_capacity_available',
-      status: 503,
+      type: 'model_unavailable',
+      code: 'model_not_served',
       retryable: true,
     });
+    // M9: alternatives array should be present
+    expect(Array.isArray(res.body.error.alternatives)).toBe(true);
   });
 
   test('chat completions returns provider_unavailable when upstream provider HTTP fails', async () => {

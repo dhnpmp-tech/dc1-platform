@@ -33,6 +33,7 @@ const {
   resolveProviderTier,
 } = require('../services/inferenceLatencyBudgetGate');
 const { looksLikeProviderKey } = require('../middleware/auth');
+const { classifyRequest } = require('../lib/request-classifier');
 
 const router = express.Router();
 const VLLM_COMPATIBILITY_MATRIX_PATH = path.join(__dirname, '../../../infra/vllm-configs/compatibility-matrix.json');
@@ -95,6 +96,150 @@ function settleIdempotencyEntry(renterId, key, { response, statusCode = 200 }) {
     statusCode,
     settledAt: Date.now(),
   });
+}
+
+// ── Session affinity — sticky routing for multi-turn chats (Mesh-LLM affinity.rs pattern)
+const SESSION_AFFINITY = new Map(); // key: hash -> { providerId, expiresAt }
+const SESSION_TTL_MS = 20 * 60 * 1000; // 20 minutes
+
+function getSessionKey(messages, model) {
+  // Hash first user message + model as session identifier
+  const firstUser = (messages || []).find(m => m.role === 'user');
+  const prefix = firstUser ? (typeof firstUser.content === 'string' ? firstUser.content.slice(0, 200) : '') : '';
+  // Simple hash (djb2)
+  let hash = 5381;
+  const str = model + ':' + prefix;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash + str.charCodeAt(i)) & 0x7fffffff;
+  }
+  return hash.toString(36);
+}
+
+function getAffinityProvider(sessionKey) {
+  const entry = SESSION_AFFINITY.get(sessionKey);
+  if (entry && entry.expiresAt > Date.now()) return entry.providerId;
+  SESSION_AFFINITY.delete(sessionKey);
+  return null;
+}
+
+function setAffinityProvider(sessionKey, providerId) {
+  SESSION_AFFINITY.set(sessionKey, { providerId, expiresAt: Date.now() + SESSION_TTL_MS });
+  // GC: if map grows large, prune expired entries
+  if (SESSION_AFFINITY.size > 10000) {
+    const now = Date.now();
+    for (const [k, v] of SESSION_AFFINITY) {
+      if (v.expiresAt < now) SESSION_AFFINITY.delete(k);
+    }
+  }
+}
+
+// ── Per-model demand tracking (Mesh-LLM demand map pattern) ─────────────────
+const MODEL_DEMAND = new Map(); // model -> { count: N, windowStart: timestamp, lastRequest: timestamp }
+const DEMAND_WINDOW_MS = 5 * 60 * 1000; // 5-minute sliding window
+
+function trackModelDemand(model) {
+  const now = Date.now();
+  const entry = MODEL_DEMAND.get(model) || { count: 0, windowStart: now };
+  if (now - entry.windowStart > DEMAND_WINDOW_MS) {
+    entry.count = 1;
+    entry.windowStart = now;
+  } else {
+    entry.count++;
+  }
+  entry.lastRequest = now;
+  MODEL_DEMAND.set(model, entry);
+}
+
+function getModelDemand(model) {
+  const entry = MODEL_DEMAND.get(model);
+  if (!entry) return 0;
+  if (Date.now() - entry.windowStart > DEMAND_WINDOW_MS) return 0;
+  return entry.count;
+}
+
+function getAllDemand() {
+  const result = {};
+  const now = Date.now();
+  for (const [model, entry] of MODEL_DEMAND) {
+    if (now - entry.windowStart <= DEMAND_WINDOW_MS) {
+      result[model] = { count: entry.count, lastRequest: entry.lastRequest };
+    }
+  }
+  return result;
+}
+
+// ── M9 Graceful Degradation helpers ─────────────────────────────────────────
+
+async function getAvailableModels(dbInstance) {
+  // Get all models currently cached by online, non-paused providers
+  const rows = (() => {
+    try {
+      return dbInstance.all(`
+        SELECT cached_models, gpu_model, vram_mb
+        FROM providers
+        WHERE status = 'online'
+          AND COALESCE(is_paused, 0) = 0
+          AND deleted_at IS NULL
+          AND last_heartbeat > datetime('now', '-120 seconds')
+      `);
+    } catch (_) { return []; }
+  })();
+
+  const modelCounts = {};
+  for (const row of (rows || [])) {
+    const models = parseCachedModels(row.cached_models);
+    for (const m of models) {
+      if (!modelCounts[m]) modelCounts[m] = { count: 0, gpus: new Set() };
+      modelCounts[m].count++;
+      if (row.gpu_model) modelCounts[m].gpus.add(row.gpu_model);
+    }
+  }
+  return modelCounts;
+}
+
+function parseModelSize(modelStr) {
+  const match = modelStr.match(/(\d+\.?\d*)b/i);
+  return match ? parseFloat(match[1]) : null;
+}
+
+function rankAlternatives(requested, available, classification) {
+  const results = [];
+  const reqLower = requested.toLowerCase();
+
+  for (const [model, info] of Object.entries(available)) {
+    const modelLower = model.toLowerCase();
+    let score = 0;
+    let reason = '';
+
+    // Same family (e.g., qwen3:4b requested, qwen3:8b available)
+    const reqFamily = reqLower.split(/[:-]/)[0];
+    const modelFamily = modelLower.split(/[:-]/)[0];
+    if (reqFamily === modelFamily) {
+      score += 10;
+      reason = `Same model family (${modelFamily})`;
+    }
+
+    // Similar size class
+    const reqSize = parseModelSize(reqLower);
+    const modelSize = parseModelSize(modelLower);
+    if (reqSize && modelSize && Math.abs(reqSize - modelSize) < reqSize * 0.5) {
+      score += 5;
+      reason = reason || `Similar size class (~${modelSize}B)`;
+    }
+
+    // Task compatibility boost
+    if (classification.category === 'code' && modelLower.includes('code')) score += 3;
+    if (classification.complexity === 'deep' && modelSize && modelSize >= 30) score += 3;
+
+    // Provider count (more = more reliable)
+    score += Math.min(info.count, 5);
+
+    if (score > 0) {
+      results.push({ model, score, reason, providerCount: info.count });
+    }
+  }
+
+  return results.sort((a, b) => b.score - a.score);
 }
 
 // ── Per-provider in-flight gate (H3) ────────────────────────────────────────
@@ -1208,6 +1353,15 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
     const temperature = toFiniteNumber(req.body?.temperature, { min: 0, max: 2 }) ?? 0.7;
     const wantsStream = !!req.body?.stream;
 
+    // ── Request classification (Mesh-LLM router.rs port) — telemetry only ──
+    const classification = classifyRequest(messages, req.body?.tools);
+    if (Math.random() < 0.1) {  // 10% sampling
+      console.error(`[router] ${classification.category}/${classification.complexity} model=${model}`);
+    }
+
+    // ── Per-model demand tracking ──
+    trackModelDemand(model);
+
     // H6 — Idempotency-Key replay. If the renter retries with the same key
     // within IDEMPOTENCY_TTL_MS, return the cached response instead of
     // creating a second upstream call (and a second bill). Streaming
@@ -1271,11 +1425,24 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       }).eligible;
     });
     if (capableProviders.length === 0) {
-      return sendV1Error(res, {
-        status: 503,
-        type: 'server_error',
-        code: 'no_capacity_available',
-        message: `No inference providers currently online for '${model}'. Try again shortly.`,
+      // M9: Graceful degradation -- suggest alternatives instead of a generic 503
+      const availableModels = await getAvailableModels(db);
+      const alternatives = rankAlternatives(model, availableModels, classification);
+      const altSlice = alternatives.slice(0, 5).map(a => ({
+        model: a.model,
+        reason: a.reason,
+        provider_count: a.providerCount,
+      }));
+
+      return res.status(503).json({
+        error: {
+          message: `Model '${model}' is not currently available. ${altSlice.length > 0 ? 'Alternatives are available.' : 'No models are currently online.'}`,
+          type: 'model_unavailable',
+          code: 'model_not_served',
+          status: 503,
+          retryable: true,
+          alternatives: altSlice,
+        },
       });
     }
 
@@ -1322,10 +1489,21 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
     }
 
     const providerById = new Map(capableProviders.map((provider) => [Number(provider.id), provider]));
-    const assignedProvider = providerById.get(Number(gateSelection.selectedProviderId)) || null;
+    let assignedProvider = providerById.get(Number(gateSelection.selectedProviderId)) || null;
     const fallbackProviders = gateSelection.fallbackProviderIds
       .map((providerId) => providerById.get(Number(providerId)))
       .filter(Boolean);
+
+    // ── Session affinity — prefer the sticky provider when it passed the gate ──
+    const sessionKey = getSessionKey(messages, model);
+    const affinityId = getAffinityProvider(sessionKey);
+    if (affinityId) {
+      const affinityCandidate = providerById.get(Number(affinityId));
+      // Only use affinity if the provider is both capable and not busy
+      if (affinityCandidate && freeProviders.some(p => Number(p.id) === Number(affinityId))) {
+        assignedProvider = affinityCandidate;
+      }
+    }
 
     if (!assignedProvider) {
       return sendV1Error(res, {
@@ -1335,6 +1513,9 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         message: 'No inference providers available for this model',
       });
     }
+
+    // Record affinity for this session
+    setAffinityProvider(sessionKey, assignedProvider.id);
 
     res.setHeader('x-dcp-latency-gate-mode', gateSelection.mode);
 
@@ -2050,4 +2231,7 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
   }
 });
 
+// Export router as default + demand tracking for admin endpoints
+router.getAllDemand = getAllDemand;
+router.getModelDemand = getModelDemand;
 module.exports = router;
