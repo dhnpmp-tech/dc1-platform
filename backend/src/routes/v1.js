@@ -1684,7 +1684,8 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       // H5 routing preference: prefer WG mesh IP when available (lower latency, more reliable)
       let effectiveEndpointUrl = assignedProvider.vllm_endpoint_url;
       if (assignedProvider.wg_mesh_ip) {
-        effectiveEndpointUrl = `http://${assignedProvider.wg_mesh_ip}:11434`;
+        const wgPort = (assignedProvider.vllm_endpoint_url || '').match(/:(\d+)\/?$/)?.[1] || '11434';
+        effectiveEndpointUrl = `http://${assignedProvider.wg_mesh_ip}:${wgPort}`;
       }
 
       const proxyResult = await proxyToProvider({
@@ -2038,7 +2039,8 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         // H5 routing preference: prefer WG mesh IP for fallback too
         let fallbackEffectiveUrl = fallbackProvider.vllm_endpoint_url;
         if (fallbackProvider.wg_mesh_ip) {
-          fallbackEffectiveUrl = `http://${fallbackProvider.wg_mesh_ip}:11434`;
+          const fbPort = (fallbackProvider.vllm_endpoint_url || '').match(/:(\d+)\/?$/)?.[1] || '11434';
+          fallbackEffectiveUrl = `http://${fallbackProvider.wg_mesh_ip}:${fbPort}`;
         }
 
         const fallbackResult = await proxyToProvider({
