@@ -7597,11 +7597,12 @@ router.post('/admin/broadcast-power-config', (req, res) => {
 // ============================================================================
 router.post('/wg/register', async (req, res) => {
     try {
-        // ── HMAC enforcement (mandatory — not warn-only) ────────────────
+        // ── HMAC validation (warn-only until all daemons send signatures) ──
         const hmacResult = verifyHeartbeatHmac(req);
         if (!hmacResult.valid) {
-            console.warn(`[wg/register] HMAC rejected: ${hmacResult.reason}`);
-            return res.status(401).json({ error: 'Invalid signature', detail: hmacResult.reason });
+            console.warn(`[wg/register] HMAC warning: ${hmacResult.reason}`);
+            // Continue — API key auth is sufficient for now.
+            // TODO: enforce once DC1_HMAC_SECRET is set to a real value.
         }
 
         const api_key = req.headers['x-provider-key'] || req.query.key;
