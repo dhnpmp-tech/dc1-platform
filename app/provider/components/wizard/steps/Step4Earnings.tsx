@@ -112,7 +112,7 @@ export function Step4Earnings({
           </div>
         </dl>
         <p className="mt-3 border-t border-dc1-border pt-2 text-xs text-dc1-text-muted">
-          In SAR: ~ {earnings.monthlySar.toFixed(0)} ﷼/month (at 3.75 SAR/USD)
+          In SAR: ~ {earnings.monthlySar.toFixed(0)} ﷼/month (approx. 3.75 SAR/USD). Earnings assume ~70% utilisation based on current network demand.
         </p>
       </div>
 
@@ -171,7 +171,7 @@ export function Step4Earnings({
         {os !== 'macos' && (
           <label className="block">
             <span className="text-sm text-dc1-text-primary">
-              Power limit <span className="text-xs text-dc1-text-muted">(NVIDIA)</span>
+              Power limit <span className="text-xs text-dc1-text-muted">(NVIDIA GPUs only — limits GPU power draw)</span>
             </span>
             <select
               value={config.powerLimit}
