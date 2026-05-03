@@ -25,7 +25,7 @@ interface LegalConsentModalProps {
   onSubmit: (payload: LegalPayload) => void
 }
 
-const PHONE_RE = /^[+]?[0-9][0-9\s\-().]{6,19}$/
+const PHONE_RE = /^[+]?[0-9][0-9\s\-().]{8,19}$/  // minimum 10 digits total (including country code)
 
 export function LegalConsentModal({
   open, busy, error, onCancel, onSubmit,
@@ -117,20 +117,32 @@ export function LegalConsentModal({
             onChange={(e) => setCountry(e.target.value)}
             className="w-full rounded-lg border border-dc1-border bg-dc1-surface-l2 p-2 text-dc1-text-primary"
           >
-            <option value="SA">Saudi Arabia (SA)</option>
-            <option value="AE">United Arab Emirates (AE)</option>
-            <option value="BH">Bahrain (BH)</option>
-            <option value="KW">Kuwait (KW)</option>
-            <option value="OM">Oman (OM)</option>
-            <option value="QA">Qatar (QA)</option>
-            <option value="EG">Egypt (EG)</option>
-            <option value="JO">Jordan (JO)</option>
-            <option value="US">United States (US)</option>
-            <option value="GB">United Kingdom (GB)</option>
-            <option value="DE">Germany (DE)</option>
-            <option value="FR">France (FR)</option>
-            <option value="IN">India (IN)</option>
-            <option value="PK">Pakistan (PK)</option>
+            <option value="SA">Saudi Arabia</option>
+            <option value="AE">United Arab Emirates</option>
+            <option value="BH">Bahrain</option>
+            <option value="KW">Kuwait</option>
+            <option value="OM">Oman</option>
+            <option value="QA">Qatar</option>
+            <option value="EG">Egypt</option>
+            <option value="JO">Jordan</option>
+            <option value="LB">Lebanon</option>
+            <option value="IQ">Iraq</option>
+            <option value="PS">Palestine</option>
+            <option value="TR">Turkey</option>
+            <option value="US">United States</option>
+            <option value="GB">United Kingdom</option>
+            <option value="DE">Germany</option>
+            <option value="FR">France</option>
+            <option value="NL">Netherlands</option>
+            <option value="CA">Canada</option>
+            <option value="AU">Australia</option>
+            <option value="IN">India</option>
+            <option value="PK">Pakistan</option>
+            <option value="BD">Bangladesh</option>
+            <option value="MY">Malaysia</option>
+            <option value="ID">Indonesia</option>
+            <option value="SG">Singapore</option>
+            <option value="ZZ">Other</option>
           </select>
         </Field>
 

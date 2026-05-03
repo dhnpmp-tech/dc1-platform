@@ -86,7 +86,13 @@ export function Step5Install({
   async function onModalSubmit(payload: LegalPayload) {
     setModalBusy(true)
     setModalError(null)
-    const ok = await mint(payload as unknown as Record<string, unknown>)
+    const ok = await mint({
+      full_name: payload.fullName,
+      phone: payload.phone,
+      city: payload.city,
+      country: payload.country,
+      pdpl_consent: payload.pdplConsent,
+    })
     setModalBusy(false)
     if (ok) setModalOpen(false)
   }
@@ -128,11 +134,53 @@ export function Step5Install({
         <>
           <InstallCommand os={os} token={token} />
 
-          {expiresAt && (
-            <p className="text-center text-xs text-dc1-text-muted">
-              Token expires {new Date(expiresAt).toLocaleString()}. Single-use only.
+          <div className="flex items-center justify-between text-xs text-dc1-text-muted">
+            {expiresAt && (
+              <span>
+                Token expires {new Date(expiresAt).toLocaleString()}. Single-use only.
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => { setToken(null); setExpiresAt(null); onGenerateClick() }}
+              className="text-dc1-amber hover:underline"
+            >
+              Regenerate token
+            </button>
+          </div>
+
+          {/* Direct download fallback */}
+          <div className="rounded-lg border border-dc1-amber/30 bg-dc1-amber/5 p-4 text-sm">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-dc1-amber">
+              Prefer a direct download?
             </p>
-          )}
+            <p className="mb-3 text-xs text-dc1-text-secondary">
+              Skip the command above and download the desktop app instead. It includes the same installer with a GUI wizard.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              {(os === 'macos' || os === 'unknown') && (
+                <a
+                  href="https://api.dcp.sa/download/mac"
+                  className="inline-flex items-center gap-2 rounded-lg border border-dc1-border bg-dc1-surface-l2 px-4 py-2 text-sm font-medium text-dc1-text-primary hover:border-dc1-amber transition-colors"
+                >
+                  <span>🍎</span> Download for Mac
+                </a>
+              )}
+              {(os === 'windows' || os === 'unknown') && (
+                <a
+                  href="https://api.dcp.sa/download/windows"
+                  className="inline-flex items-center gap-2 rounded-lg border border-dc1-border bg-dc1-surface-l2 px-4 py-2 text-sm font-medium text-dc1-text-primary hover:border-dc1-amber transition-colors"
+                >
+                  <span>🪟</span> Download for Windows
+                </a>
+              )}
+              {os === 'linux' && (
+                <p className="text-xs text-dc1-text-muted">
+                  Linux: use the terminal command above. Desktop app coming soon.
+                </p>
+              )}
+            </div>
+          </div>
 
           <div className="rounded-lg border border-dc1-border bg-dc1-surface-l2 p-4 text-sm">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-dc1-text-muted">
@@ -170,13 +218,20 @@ export function Step5Install({
 
 function InstallCommand({ os, token }: { os: DetectedOS; token: string }) {
   const cmd = buildCommand(os, token)
+  const osLabel = os === 'windows' ? 'Windows (PowerShell as Admin)'
+    : os === 'macos' ? 'macOS (Terminal)' : os === 'linux' ? 'Linux (Terminal)' : 'Terminal'
   return (
     <div className="space-y-2">
-      <p className="text-xs font-semibold uppercase tracking-wide text-dc1-text-muted">
-        {os === 'windows'
-          ? 'Open PowerShell as Administrator, then paste:'
-          : 'Open Terminal, then paste:'}
-      </p>
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wide text-dc1-text-muted">
+          {os === 'windows'
+            ? 'Open PowerShell as Administrator, then paste:'
+            : 'Open Terminal, then paste:'}
+        </p>
+        <span className="rounded bg-dc1-surface-l2 px-2 py-0.5 text-[10px] font-semibold text-dc1-amber">
+          {osLabel}
+        </span>
+      </div>
       <div className="relative rounded-lg border border-dc1-border bg-dc1-void p-4">
         <pre className="overflow-x-auto text-xs leading-relaxed text-dc1-text-primary">
           <code>{cmd}</code>
@@ -185,6 +240,9 @@ function InstallCommand({ os, token }: { os: DetectedOS; token: string }) {
           <CopyButton text={cmd} label="Copy" />
         </div>
       </div>
+      <p className="text-[10px] text-dc1-text-muted">
+        Copy from this page only — pasting from email or chat can break the command (dashes get mangled).
+      </p>
     </div>
   )
 }
@@ -208,28 +266,30 @@ function buildCommand(os: DetectedOS, token: string): string {
 
 const INSTALLER_BEHAVIOUR: Record<DetectedOS, string[]> = {
   windows: [
-    'Installs DCP daemon to C:\\DCP\\',
-    'Creates Windows service (auto-start)',
-    'Adds system-tray app for monitoring',
-    'Configures firewall exceptions',
+    'Installs DCP daemon + desktop app',
+    'Creates Windows service (auto-start on boot)',
+    'Configures firewall exceptions for GPU inference',
+    'Sets up WireGuard mesh tunnel (persistent, no manual config)',
     'Verifies GPU + NVIDIA driver',
-    'Registers with api.dcp.sa',
+    'Registers with api.dcp.sa and starts earning',
   ],
   macos: [
-    'Installs DCP daemon to /usr/local/dcp/',
-    'Creates launchd agent (auto-start on login)',
-    'Adds menu-bar app for monitoring',
+    'Installs DCP daemon + desktop app',
+    'Sets up persistent WireGuard tunnel (one-time admin prompt)',
     'Detects Apple Silicon / unified memory',
-    'Registers with api.dcp.sa',
+    'Installs MLX inference engine for Apple GPUs',
+    'Registers with api.dcp.sa and starts earning',
+    'Note: macOS may ask to approve the app in System Settings → Privacy',
   ],
   linux: [
     'Installs DCP daemon to /opt/dcp/',
     'Creates systemd unit (dcpd.service)',
-    'Configures udev rules for GPU access',
+    'Sets up WireGuard mesh tunnel',
     'Verifies NVIDIA / ROCm driver',
-    'Registers with api.dcp.sa',
+    'Registers with api.dcp.sa and starts earning',
+    'Note: requires sudo password during install',
   ],
   unknown: [
-    'Installs the DCP daemon and registers with api.dcp.sa',
+    'Installs the DCP daemon, configures WireGuard tunnel, and registers with api.dcp.sa',
   ],
 }
