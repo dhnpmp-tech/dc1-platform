@@ -88,10 +88,16 @@ export function WizardShell({ initialCredentials, onComplete }: WizardShellProps
   const handleInstallContinue = useCallback(() => setStep(6), [setStep])
 
   const handleDone = useCallback(() => {
+    const key = session.credentials?.apiKey
+    // Persist credentials to localStorage before clearing wizard session
+    // so the dashboard can pick them up without re-auth.
+    if (key) {
+      try { localStorage.setItem('dc1_provider_key', key) } catch { /* ignore */ }
+    }
     saveSession(SESSION_KEY, defaultSession())
     onComplete()
-    router.push('/provider/dashboard?activated=1')
-  }, [onComplete, router])
+    router.push(`/provider/dashboard?activated=1${key ? `&apiKey=${key}` : ''}`)
+  }, [onComplete, router, session.credentials?.apiKey])
 
   // ── Render ──────────────────────────────────────────────────────────────
   const apiKey = session.credentials?.apiKey
