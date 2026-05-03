@@ -86,13 +86,7 @@ export function Step5Install({
   async function onModalSubmit(payload: LegalPayload) {
     setModalBusy(true)
     setModalError(null)
-    const ok = await mint({
-      full_name: payload.fullName,
-      phone: payload.phone,
-      city: payload.city,
-      country: payload.country,
-      pdpl_consent: payload.pdplConsent,
-    })
+    const ok = await mint(payload as unknown as Record<string, unknown>)
     setModalBusy(false)
     if (ok) setModalOpen(false)
   }
