@@ -446,7 +446,10 @@ function GpuPlayground() {
   const [progressPhase, setProgressPhase] = useState<string>('');
   const [endpointUrl, setEndpointUrl] = useState<string>('');
   const [copiedEndpoint, setCopiedEndpoint] = useState(false);
+  const [streamingText, setStreamingText] = useState<string>('');
+  const [streamingTokenCount, setStreamingTokenCount] = useState(0);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const blockedReasonTrackedRef = useRef<Set<string>>(new Set());
   const submitWasBlockedRef = useRef(false);
@@ -1084,10 +1087,18 @@ function GpuPlayground() {
     }
 
     try {
-      // For LLM inference: use /v1/chat/completions directly (fast, streaming, no Docker)
+      // For LLM inference: use /v1/chat/completions with streaming
       if (jobType === 'llm_inference') {
         const startedAt = new Date();
         const t0 = performance.now();
+        setStreamingText('');
+        setStreamingTokenCount(0);
+        setPhase('polling');
+        setProgressPhase('generating');
+
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
         const inferenceRes = await fetch('https://api.dcp.sa/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -1099,8 +1110,9 @@ function GpuPlayground() {
             messages: [{ role: 'user', content: prompt.trim() }],
             max_tokens: maxTokens,
             temperature,
-            stream: false,
+            stream: true,
           }),
+          signal: controller.signal,
         });
 
         if (!inferenceRes.ok) {
@@ -1109,29 +1121,79 @@ function GpuPlayground() {
           throw new Error(errMsg);
         }
 
-        const inferenceData = await inferenceRes.json();
-        const wallMs = performance.now() - t0;
-        const completedAt = new Date();
-        const content = inferenceData.choices?.[0]?.message?.content
-          || inferenceData.choices?.[0]?.message?.reasoning_content
-          || '';
-        const usage = inferenceData.usage || {};
-        const timings = inferenceData.timings || {};
-
-        // Set job ID from response for Job Detail page
-        const chatcmplId = inferenceData.id || '';
-        setJobStringId(chatcmplId);
-
         const providerGpu = inferenceRes.headers.get('x-dcp-provider-endpoint-host') || 'GPU';
         const providerIdHeader = inferenceRes.headers.get('x-dcp-provider-id') || '';
 
-        // Use upstream timings if present (llama.cpp), else wall-clock (Ollama doesn't include them)
-        const genTimeS = timings.predicted_ms
-          ? timings.predicted_ms / 1000
+        // Parse streaming SSE response
+        let fullContent = '';
+        let tokenCount = 0;
+        let chatcmplId = '';
+        let responseModel = llmModel;
+        let finalUsage: Record<string, any> = {};
+        let finalTimings: Record<string, any> = {};
+
+        const reader = inferenceRes.body?.getReader();
+        const decoder = new TextDecoder();
+
+        if (reader) {
+          let buffer = '';
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            // Keep last potentially incomplete line in buffer
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || !trimmed.startsWith('data: ')) continue;
+              const data = trimmed.slice(6);
+              if (data === '[DONE]') continue;
+
+              try {
+                const chunk = JSON.parse(data);
+                if (chunk.id) chatcmplId = chunk.id;
+                if (chunk.model) responseModel = chunk.model;
+
+                const delta = chunk.choices?.[0]?.delta;
+                if (delta?.content) {
+                  fullContent += delta.content;
+                  tokenCount++;
+                  setStreamingText(fullContent);
+                  setStreamingTokenCount(tokenCount);
+                }
+                if (delta?.reasoning_content) {
+                  fullContent += delta.reasoning_content;
+                  tokenCount++;
+                  setStreamingText(fullContent);
+                  setStreamingTokenCount(tokenCount);
+                }
+
+                // Some backends send usage in the final chunk
+                if (chunk.usage) finalUsage = chunk.usage;
+                if (chunk.timings) finalTimings = chunk.timings;
+              } catch {
+                // Skip malformed JSON chunks
+              }
+            }
+          }
+        }
+
+        const wallMs = performance.now() - t0;
+        const completedAt = new Date();
+
+        // Set job ID from response
+        setJobStringId(chatcmplId);
+
+        // Calculate timings
+        const completionTokens = finalUsage.completion_tokens || tokenCount;
+        const genTimeS = finalTimings.predicted_ms
+          ? finalTimings.predicted_ms / 1000
           : Math.round((wallMs / 1000) * 10) / 10;
-        const completionTokens = usage.completion_tokens || 0;
-        const tokensPerSec = timings.predicted_per_second
-          ? timings.predicted_per_second
+        const tokensPerSec = finalTimings.predicted_per_second
+          ? finalTimings.predicted_per_second
           : (genTimeS > 0 && completionTokens > 0
               ? Math.round((completionTokens / genTimeS) * 10) / 10
               : 0);
@@ -1139,21 +1201,21 @@ function GpuPlayground() {
         setResult({
           type: 'text',
           prompt: prompt.trim(),
-          response: content,
-          model: inferenceData.model || llmModel,
+          response: fullContent,
+          model: responseModel,
           tokens_generated: completionTokens,
           tokens_per_second: tokensPerSec,
           gen_time_s: genTimeS,
           total_time_s: genTimeS,
           device: providerGpu,
           billing: {
-            actual_cost_halala: usage.pricing?.usd_total ? Math.round(parseFloat(usage.pricing.usd_total) * 375) : 1,
-            actual_cost_sar: usage.pricing?.usd_total ? (parseFloat(usage.pricing.usd_total) * 3.75).toFixed(4) : '0.01',
+            actual_cost_halala: finalUsage.pricing?.usd_total ? Math.round(parseFloat(finalUsage.pricing.usd_total) * 375) : 1,
+            actual_cost_sar: finalUsage.pricing?.usd_total ? (parseFloat(finalUsage.pricing.usd_total) * 3.75).toFixed(4) : '0.01',
           },
         });
         // Populate Execution Proof panel for v1 inference path (no polling, no /jobs/:id/proof)
         const inferProvider = providerId ? providers.find((p) => p.id === providerId) || null : null;
-        const costH = usage.pricing?.usd_total ? Math.round(parseFloat(usage.pricing.usd_total) * 375) : 1;
+        const costH = finalUsage.pricing?.usd_total ? Math.round(parseFloat(finalUsage.pricing.usd_total) * 375) : 1;
         setProof({
           job_id: chatcmplId || '',
           provider_name: inferProvider?.name || providerGpu || 'Unknown',
@@ -1168,13 +1230,14 @@ function GpuPlayground() {
           dc1_fee_halala: Math.round(costH * 0.25),
           raw_log: '',
         });
+        setStreamingText('');
         setPhase('done');
         trackPlaygroundEvent('job_submit_success', {
           job_type: 'llm_inference',
           job_id: chatcmplId,
           provider_id: providerIdHeader || providerId,
           model: llmModel,
-          tokens: usage.total_tokens,
+          tokens: finalUsage.total_tokens || completionTokens,
         });
         return;
       }
@@ -1465,6 +1528,12 @@ function GpuPlayground() {
     setProgressPhase('');
     setEndpointUrl('');
     setCopiedEndpoint(false);
+    setStreamingText('');
+    setStreamingTokenCount(0);
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
   }
 
   function copyEndpoint() {
@@ -2603,6 +2672,18 @@ function GpuPlayground() {
               )}
             </div>
 
+            {/* ── Streaming Response ──────────────────────────────── */}
+            {phase === 'polling' && streamingText && (
+              <div className="bg-[#00D9FF]/5 border border-[#00D9FF]/20 rounded-xl p-6 mb-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-3 h-3 rounded-full bg-[#00D9FF] animate-pulse" />
+                  <span className="text-[#00D9FF] font-semibold text-sm">Streaming response...</span>
+                  <span className="text-white/30 text-xs ml-auto">{streamingTokenCount} tokens</span>
+                </div>
+                <p className="text-white/90 leading-relaxed text-lg whitespace-pre-wrap">{streamingText}<span className="inline-block w-2 h-5 bg-[#00D9FF] animate-pulse ml-0.5 align-text-bottom" /></p>
+              </div>
+            )}
+
             {/* ── Error ─────────────────────────────────────────── */}
             {phase === 'error' && (
               <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-5 mb-6">
@@ -2700,7 +2781,22 @@ print(response.choices[0].message.content)`}</pre>
                       <span className="text-[#00D9FF] font-semibold text-sm">{t('playground.ai_response')}</span>
                       <span className="text-white/30 text-xs ml-auto">{result.model?.split('/').pop()}</span>
                     </div>
-                    <p className="text-white/90 leading-relaxed text-lg">{result.response}</p>
+                    <p className="text-white/90 leading-relaxed text-lg whitespace-pre-wrap">{result.response}</p>
+                    {/* Token count + cost summary */}
+                    <div className="flex flex-wrap items-center gap-4 mt-4 pt-3 border-t border-[#00D9FF]/10">
+                      {result.tokens_generated != null && result.tokens_generated > 0 && (
+                        <span className="text-xs text-white/50">
+                          {result.tokens_generated} tokens
+                          {result.tokens_per_second ? ` @ ${result.tokens_per_second} tok/s` : ''}
+                        </span>
+                      )}
+                      {result.gen_time_s != null && result.gen_time_s > 0 && (
+                        <span className="text-xs text-white/50">{result.gen_time_s.toFixed(1)}s generation</span>
+                      )}
+                      {result.billing && (
+                        <span className="text-xs text-[#FFD700]">{result.billing.actual_cost_sar} SAR</span>
+                      )}
+                    </div>
                   </div>
                 )}
 
