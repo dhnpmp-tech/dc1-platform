@@ -244,7 +244,7 @@ function BillingPageInner() {
     }
 
     const effectiveAmount = isCustom ? parseFloat(customAmount) : topupAmount
-    if (!effectiveAmount || effectiveAmount < 1 || effectiveAmount > 10000) return
+    if (!effectiveAmount || effectiveAmount < 1 || effectiveAmount > 100000) return
 
     const amountHalala = Math.round(effectiveAmount * 100)
 
@@ -302,8 +302,8 @@ function BillingPageInner() {
       setTopupError('Minimum top-up is 1 SAR')
       return
     }
-    if (amount > 10000) {
-      setTopupError('Maximum top-up is 10,000 SAR')
+    if (amount > 100000) {
+      setTopupError('Maximum top-up is 100,000 SAR')
       return
     }
     setTopupError('')
@@ -526,7 +526,7 @@ function BillingPageInner() {
                           <input
                             type="number"
                             min="1"
-                            max="10000"
+                            max="100000"
                             step="0.01"
                             placeholder="Enter amount..."
                             value={customAmount}
