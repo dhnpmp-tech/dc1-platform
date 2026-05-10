@@ -725,6 +725,13 @@ app.use('/api/rag', ragRouter);
 const arabicRagRouter = require('./routes/arabic-rag');
 app.use('/api/templates/arabic-rag', arabicRagRouter);
 
+// Agent gateway — proxies provider Hermes traffic to upstream brains
+// (MiniMax / Anthropic / future in-house). Server-side keys; providers
+// authenticate with their DCP_PROVIDER_KEY. Swappable by editing
+// UPSTREAMS / ROUTING in routes/agent-gateway.js.
+const agentGatewayRouter = require('./routes/agent-gateway');
+app.use('/api/agent/gateway', agentGatewayRouter);
+
 const db = require('./db');
 const sweepIntervalMsRaw = Number.parseInt(process.env.JOB_SWEEP_INTERVAL_MS || '30000', 10);
 const sweepIntervalMs = Number.isFinite(sweepIntervalMsRaw) && sweepIntervalMsRaw > 0 ? sweepIntervalMsRaw : 30000;
