@@ -522,6 +522,19 @@ app.get('/install.sh', (req, res) => {
     return res.sendFile(INSTALL_SCRIPT_PATH);
 });
 
+// Agent-driven install (curl https://api.dcp.sa/install/agent | bash -s -- --token TOKEN)
+// This is the new path: bootstrap the DCP Agent (Hermes fork), and the
+// agent itself orchestrates the rest of the install via its skills.
+const AGENT_INSTALL_SCRIPT_PATH = path.join(__dirname, '..', 'public', 'agent-install.sh');
+app.get('/install/agent', (req, res) => {
+    if (!fs.existsSync(AGENT_INSTALL_SCRIPT_PATH)) {
+        return res.status(404).json({ error: 'Agent install script not found' });
+    }
+    res.setHeader('Content-Type', 'text/x-shellscript; charset=utf-8');
+    res.setHeader('Content-Disposition', 'inline; filename="agent-install.sh"');
+    return res.sendFile(AGENT_INSTALL_SCRIPT_PATH);
+});
+
 // Tauri auto-updater endpoint — serves update manifest
 // Format: https://api.dcp.sa/api/providers/updates/{target}/{current_version}
 app.get('/api/providers/updates/:target/:current_version', (req, res) => {
@@ -711,6 +724,13 @@ app.use('/api/rag', ragRouter);
 
 const arabicRagRouter = require('./routes/arabic-rag');
 app.use('/api/templates/arabic-rag', arabicRagRouter);
+
+// Agent gateway — proxies provider Hermes traffic to upstream brains
+// (MiniMax / Anthropic / future in-house). Server-side keys; providers
+// authenticate with their DCP_PROVIDER_KEY. Swappable by editing
+// UPSTREAMS / ROUTING in routes/agent-gateway.js.
+const agentGatewayRouter = require('./routes/agent-gateway');
+app.use('/api/agent/gateway', agentGatewayRouter);
 
 const db = require('./db');
 const sweepIntervalMsRaw = Number.parseInt(process.env.JOB_SWEEP_INTERVAL_MS || '30000', 10);
