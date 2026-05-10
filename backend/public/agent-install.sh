@@ -113,16 +113,62 @@ done
 
 if [ -z "${PY}" ]; then
   warn "Python 3.11+ not found — installing"
+
+  # Pre-flight: confirm sudo can actually elevate. If we're piped through
+  # bash via curl with no controlling tty, sudo's password prompt breaks
+  # silently — better to detect early and tell the user how to recover.
+  SUDO=""
+  if [ "$(id -u)" = "0" ]; then
+    SUDO=""
+  elif sudo -n true 2>/dev/null; then
+    SUDO="sudo -n"
+  elif [ -t 0 ] || [ -t 1 ]; then
+    SUDO="sudo"
+  else
+    cat <<'NOTTY' >&2
+ERROR: This installer needs sudo to install Python 3.11, but the curl-pipe-bash
+shell has no controlling terminal, so sudo can't prompt for your password.
+Run instead:
+
+  curl -sSL https://api.dcp.sa/install/agent -o /tmp/dcp.sh
+  chmod +x /tmp/dcp.sh
+  sudo /tmp/dcp.sh --api-key YOUR_KEY
+
+(Or run as root.)
+NOTTY
+    exit 1
+  fi
+
   if [ "${PLATFORM}" = linux ]; then
     if command -v apt-get >/dev/null 2>&1; then
-      sudo apt-get update -qq
-      sudo apt-get install -y -qq python3.11 python3.11-venv python3-pip
+      # Distro detection — Ubuntu 22.04 ships python3.10; Python 3.11
+      # lives in the deadsnakes PPA. Ubuntu 24.04+ has 3.12 in main.
+      DISTRO="$(. /etc/os-release 2>/dev/null && echo "${ID:-unknown}")"
+      DISTRO_VER="$(. /etc/os-release 2>/dev/null && echo "${VERSION_ID:-0}")"
+      ${SUDO} apt-get update -qq
+      ${SUDO} apt-get install -y -qq software-properties-common ca-certificates curl gnupg
+      # Try to install python3.11 from default repos; if that fails on
+      # Ubuntu/Debian, add the deadsnakes PPA and try again.
+      if ! ${SUDO} apt-get install -y -qq python3.11 python3.11-venv python3.11-dev python3-pip 2>/dev/null; then
+        if [ "${DISTRO}" = "ubuntu" ] || [ "${DISTRO}" = "debian" ]; then
+          warn "python3.11 not in default repos — adding deadsnakes PPA"
+          ${SUDO} add-apt-repository -y ppa:deadsnakes/ppa 2>&1 | tail -3 || true
+          ${SUDO} apt-get update -qq
+          ${SUDO} apt-get install -y -qq python3.11 python3.11-venv python3.11-dev python3-pip || \
+            fail "deadsnakes install failed — try Ubuntu 24.04 (python3.12 native) or install Python 3.11 manually."
+        else
+          fail "Could not install Python 3.11 from default repos on ${DISTRO}. Install manually and re-run."
+        fi
+      fi
       PY="$(command -v python3.11)"
     elif command -v dnf >/dev/null 2>&1; then
-      sudo dnf install -y python3.11 python3-pip
+      ${SUDO} dnf install -y python3.11 python3.11-devel python3-pip
       PY="$(command -v python3.11)"
+    elif command -v pacman >/dev/null 2>&1; then
+      ${SUDO} pacman -Sy --noconfirm python python-pip
+      PY="$(command -v python3)"
     else
-      fail "No supported package manager. Install Python 3.11+ manually and re-run."
+      fail "No supported package manager (apt-get / dnf / pacman). Install Python 3.11+ manually and re-run."
     fi
   else
     if command -v brew >/dev/null 2>&1; then
@@ -131,6 +177,17 @@ if [ -z "${PY}" ]; then
     else
       fail "Homebrew required on macOS. Install from brew.sh and re-run."
     fi
+  fi
+fi
+
+# Belt-and-suspenders: even if Python 3.11 was already present, verify
+# the venv module works (some distros ship python3 without -venv).
+if ! "${PY}" -c 'import venv, ensurepip' 2>/dev/null; then
+  warn "${PY} missing venv/ensurepip module — installing"
+  if [ "${PLATFORM}" = linux ] && command -v apt-get >/dev/null 2>&1; then
+    PYVER="$("${PY}" -c 'import sys; print(f"python{sys.version_info.major}.{sys.version_info.minor}")')"
+    ${SUDO:-sudo} apt-get install -y -qq "${PYVER}-venv" "${PYVER}-dev" || \
+      fail "Could not install ${PYVER}-venv. Install manually."
   fi
 fi
 ok "Python: ${PY} ($("${PY}" --version))"
