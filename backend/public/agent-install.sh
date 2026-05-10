@@ -293,16 +293,14 @@ EFFECTIVE_KEY="${PROVIDER_KEY:-dcp-bootstrap-no-key}"
 } > "${HERMES_ENV}"
 chmod 600 "${HERMES_ENV}"
 
-# config.yaml — point Hermes at the minimax provider (Anthropic transport)
-# so it routes through our gateway. Approvals=yolo + command_allowlist='*'
-# so first-run-orchestration runs unattended (curl-pipe-bash has no
-# controlling tty anyway). Hand-write the YAML to avoid a PyYAML
-# dependency in the system Python before the venv exists.
+# config.yaml — match Peter's verified-working setup on macOS exactly:
+# top-level `model: <name>` + a custom `providers.dcp-gateway` block
+# using OpenAI chat-completions API pointed at our gateway. The
+# built-in `minimax` overlay uses Anthropic-format which routes to a
+# different upstream URL we don't want. The placeholder apiKey is fine
+# because our gateway re-signs with the server-side MINIMAX_AGENT_KEY.
 cat > "${HERMES_CONFIG}" <<'YAMLEOF'
-model:
-  provider: minimax
-  default: MiniMax-M2.7-highspeed
-  model: MiniMax-M2.7-highspeed
+model: MiniMax-M2.7-highspeed
 approvals:
   mode: yolo
   timeout: 60
@@ -310,8 +308,58 @@ approvals:
 command_allowlist:
   - '*'
 hooks_auto_accept: true
+agent:
+  api_max_retries: 3
+  max_turns: 50
 YAMLEOF
 chmod 600 "${HERMES_CONFIG}"
+
+# auth.json — load-bearing for hermes -z (oneshot) and for the agent
+# loop in general. Hermes reads credential_pool.minimax[0] to find the
+# MiniMax provider's auth + base URL. Peter's verified-working entry on
+# macOS (2026-05-06) has shape:
+#   { id, label, auth_type: 'api_key', priority: 0, source, access_token,
+#     base_url, request_count: 0 }
+# We point base_url at our gateway and use the provider's DCP key as
+# access_token — the gateway ignores incoming auth and re-signs with
+# the server-side MINIMAX_AGENT_KEY upstream. Provider's machine never
+# holds the MiniMax key.
+HERMES_AUTH="${HOME}/.hermes/auth.json"
+CRED_TOKEN="${PROVIDER_KEY:-dcp-bootstrap-no-key}"
+"${PY}" - <<PYAUTH
+import json, os, secrets, datetime
+path = os.path.expanduser('${HERMES_AUTH}')
+entry = {
+    'id': secrets.token_hex(3),
+    'label': 'DCP_PROVIDER_KEY',
+    'auth_type': 'api_key',
+    'priority': 0,
+    'source': 'dcp-installer:auth.json',
+    'access_token': '${CRED_TOKEN}',
+    'last_status': None,
+    'last_status_at': None,
+    'last_error_code': None,
+    'last_error_reason': None,
+    'last_error_message': None,
+    'last_error_reset_at': None,
+    # Trailing /anthropic triggers Hermes' anthropic_messages transport
+    # (runtime_provider.py:_detect_api_mode_for_url). Without it Hermes
+    # falls back to chat_completions and gets a response shape it can't
+    # parse → "(empty)" sentinel. Gateway aliases this to /v1/messages.
+    'base_url': 'https://api.dcp.sa/api/agent/gateway/anthropic',
+    'request_count': 0,
+}
+auth = {
+    'version': 1,
+    'providers': {},
+    'credential_pool': {'minimax': [entry]},
+    'updated_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+}
+with open(path, 'w') as f:
+    json.dump(auth, f, indent=2)
+os.chmod(path, 0o600)
+print('auth.json written:', path)
+PYAUTH
 
 ok "Brain endpoint set: api.dcp.sa/api/agent/gateway (provider=minimax, yolo)"
 

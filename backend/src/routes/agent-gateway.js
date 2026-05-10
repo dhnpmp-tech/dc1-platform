@@ -120,6 +120,43 @@ function proxyJson(targetUrl, body, extraHeaders = {}) {
   });
 }
 
+// Stream-mode proxy: pipe upstream response bytes straight to client
+// without JSON.parse (text/event-stream chunks aren't single JSON docs).
+// Used for stream:true requests where Hermes' client expects SSE.
+function proxyStream(targetUrl, body, extraHeaders, res) {
+  const data = JSON.stringify(body);
+  const u = new URL(targetUrl);
+  const upstreamReq = https.request(
+    {
+      method: 'POST',
+      hostname: u.hostname,
+      port: u.port || 443,
+      path: u.pathname + (u.search || ''),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+        'Content-Length': Buffer.byteLength(data),
+        ...extraHeaders,
+      },
+    },
+    (upstreamRes) => {
+      res.status(upstreamRes.statusCode || 502);
+      const ct = upstreamRes.headers['content-type'];
+      if (ct) res.setHeader('Content-Type', ct);
+      const cc = upstreamRes.headers['cache-control'];
+      if (cc) res.setHeader('Cache-Control', cc);
+      upstreamRes.pipe(res);
+    }
+  );
+  upstreamReq.on('error', (err) => {
+    console.error(`[agent-gateway/stream] upstream error: ${err.message}`);
+    if (!res.headersSent) res.status(502).json({ error: 'gateway_failed', detail: err.message });
+  });
+  upstreamReq.write(data);
+  upstreamReq.end();
+}
+
+
 function shortKey(req) {
   const raw =
     req.headers['x-provider-key'] ||
@@ -149,6 +186,14 @@ router.post('/v1/messages', async (req, res) => {
     `[agent-gateway/anthropic] ${ts} provider=${shortKey(req)} ` +
     `upstream=${route.upstream} model=${model} msgs=${msgs}`
   );
+  // Streaming requests need byte-level proxying — JSON.parse can't
+  // handle text/event-stream. Detect and split into two paths.
+  if (req.body && req.body.stream === true) {
+    return proxyStream(upstream.anthropic_url, { ...req.body, model }, {
+      ...authHeadersFor(route.upstream),
+      'anthropic-version': req.headers['anthropic-version'] || '2023-06-01',
+    }, res);
+  }
   try {
     const body = { ...req.body, model };
     const result = await proxyJson(upstream.anthropic_url, body, {
@@ -166,6 +211,10 @@ router.post('/v1/messages', async (req, res) => {
         `[agent-gateway/anthropic] DONE provider=${shortKey(req)} ` +
         `in=${usage.input_tokens || 0} out=${usage.output_tokens || 0}`
       );
+      // TEMP debug: when usage is missing, log full upstream body.
+      if (!usage.input_tokens && !usage.output_tokens) {
+        console.log(`[agent-gateway/anthropic] DEBUG req-keys=${Object.keys(req.body || {}).join(',')} resp-keys=${Object.keys(result.json || {}).join(',')} resp-body=${JSON.stringify(result.json).slice(0, 500)}`);
+      }
     }
     res.status(result.status).json(result.json || { error: 'upstream_text', raw: result.raw });
   } catch (err) {
@@ -216,6 +265,15 @@ router.post('/chat/completions', async (req, res) => {
     console.error(`[agent-gateway/openai] ERROR: ${err.message}`);
     res.status(502).json({ error: 'gateway_failed', detail: err.message });
   }
+});
+
+// Alias: Hermes auto-detects Anthropic transport ONLY when base_url
+// ends in `/anthropic` (runtime_provider.py:81). So providers ship with
+// credential.base_url = `…/api/agent/gateway/anthropic`, and Hermes
+// posts to `…/anthropic/v1/messages`. Same handler as `/v1/messages`.
+router.post('/anthropic/v1/messages', (req, res, next) => {
+  req.url = '/v1/messages';
+  router.handle(req, res, next);
 });
 
 router.get('/health', (req, res) => {
