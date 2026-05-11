@@ -1223,7 +1223,10 @@ function resolveOllamaModelId(modelId, endpointUrl, providerCachedModels) {
 
   // Additional reverse case: caller used an Ollama tag but the provider
   // only reports the HF-style id in cached_models — map back to HF.
-  if (looksOllama && OLLAMA_TO_HF_ALIASES[normalized]) {
+  // Critical: only do this when the endpoint is NOT Ollama. If endpoint
+  // looks like Ollama (port 11434, /ollama in URL, or cached_models is
+  // dominated by Ollama tags), the Ollama tag is what the server expects.
+  if (looksOllama && !endpointLooksOllama && !cachedLooksOllama && OLLAMA_TO_HF_ALIASES[normalized]) {
     const hf = OLLAMA_TO_HF_ALIASES[normalized];
     if (cachedList.some((m) => m === hf.toLowerCase())) {
       return hf;
