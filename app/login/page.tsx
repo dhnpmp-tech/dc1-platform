@@ -101,6 +101,15 @@ function LoginPageInner() {
       if (!email.trim()) { setError(t('login.enter_email')); setIsLoading(false); return }
       if (role === 'admin') { setError(t('login.admin_needs_key')); setIsLoading(false); return }
       persistRolePreference(role)
+      // Stash the post-login redirect so /auth/verify can honor it after the
+      // magic-link click. URL params don't survive the email round-trip; this
+      // sessionStorage key is read in app/auth/verify/page.tsx.
+      try {
+        const r = searchParams.get('redirect')
+        if (r && r.startsWith('/') && !r.startsWith('//')) {
+          sessionStorage.setItem('dcp_post_auth_redirect', r)
+        }
+      } catch { /* sessionStorage unavailable — fall through */ }
       const endpoint = role === 'renter' ? 'renters/send-otp' : 'providers/send-otp'
       const res = await fetch(`${API_BASE}/${endpoint}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
