@@ -8096,6 +8096,8 @@ router.post('/wg/register', async (req, res) => {
 router.post('/wg/install-config', async (req, res) => {
     try {
         const { execSync, execFileSync } = require('child_process');
+        const WG_SERVER_PUBKEY = 'zVxlVgKwnxq4Z9l6jGgD0yMJH5meHrlodJYyRHrL+wM=';
+        const WG_SERVER_ENDPOINT = '76.13.179.86:51820';
         const api_key = req.headers['x-provider-key'] || req.query.key;
         if (!api_key) {
             return res.status(401).json({ error: 'x-provider-key header required' });
