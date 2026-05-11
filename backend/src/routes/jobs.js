@@ -4704,24 +4704,94 @@ router.post('/from-template', jobCreateLimiter, requireRenter, (req, res) => {
     const provider = db.get(providerSql, ...providerArgs);
 
     if (!provider) {
-      // Capacity snapshot for the empathetic 503
+      // Migration 008: nobody has it cached, but maybe somebody with enough
+      // VRAM can pull it. Pick the freshest capable provider and write a
+      // pull_model task — the renter waits in `warming_provider` state.
+      // Three preconditions:
+      //   1. model row has ollama_pull_uri set (otherwise we don't know what
+      //      to pull and we should still 503 honestly)
+      //   2. a capable provider exists (VRAM + fresh heartbeat + not paused)
+      //   3. that provider has enough free disk (best-effort: not required
+      //      yet because the daemon doesn't surface disk_free; the agent's
+      //      own preflight will refuse the pull if it can't fit)
       const capable = db.all(
-        `SELECT id FROM providers
-          WHERE status = 'online'
-            AND COALESCE(is_paused, 0) = 0
-            AND last_heartbeat >= ?
-            AND COALESCE(gpu_vram_mib, vram_gb * 1024, 0) >= ?`,
+        `SELECT p.id, p.name, p.gpu_model, p.last_heartbeat
+           FROM providers p
+          WHERE p.status = 'online'
+            AND COALESCE(p.is_paused, 0) = 0
+            AND p.last_heartbeat >= ?
+            AND COALESCE(p.gpu_vram_mib, p.vram_gb * 1024, 0) >= ?
+       ORDER BY (SELECT COUNT(*) FROM jobs j WHERE j.provider_id = p.id AND j.status IN ('assigned','pulling','running','pending')) ASC,
+                p.last_heartbeat DESC`,
         tenMinAgo, minVramMib
       );
-      return res.status(503).json({
-        error: modelId
-          ? `No online provider currently has '${modelId}' cached and meets the VRAM floor`
-          : 'No online provider currently meets the VRAM floor',
-        code: 'NO_PROVIDER_AVAILABLE',
-        required_vram_gb: minVramGb,
-        model_id: modelId || null,
-        capable_provider_count: Array.isArray(capable) ? capable.length : 0,
-        retry_after_seconds: 60,
+      const pullUri = modelRow && typeof modelRow.ollama_pull_uri === 'string' && modelRow.ollama_pull_uri.trim()
+        ? modelRow.ollama_pull_uri.trim() : null;
+      if (!pullUri || !Array.isArray(capable) || capable.length === 0) {
+        return res.status(503).json({
+          error: modelId
+            ? `No online provider has '${modelId}' cached and no auto-pull configured`
+            : 'No online provider currently meets the VRAM floor',
+          code: 'NO_PROVIDER_AVAILABLE',
+          required_vram_gb: minVramGb,
+          model_id: modelId || null,
+          capable_provider_count: Array.isArray(capable) ? capable.length : 0,
+          retry_after_seconds: 60,
+        });
+      }
+      const targetProvider = capable[0];
+      const nowIso = new Date().toISOString();
+      const job_id = 'job-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+      const taskInsert = db.prepare(
+        `INSERT INTO pending_provider_tasks
+           (provider_id, task_type, params_json, status, created_at, source_job_id)
+         VALUES (?, 'pull_model', ?, 'queued', ?, ?)`
+      ).run(
+        targetProvider.id,
+        JSON.stringify({
+          model_id: modelRow.model_id,
+          ollama_pull_uri: pullUri,
+          download_size_bytes: modelRow.download_size_bytes || null,
+        }),
+        nowIso,
+        job_id
+      );
+      const taskId = taskInsert.lastInsertRowid;
+      // Hold a placeholder job in warming_provider state so the renter
+      // has something to poll. Cost is 0 — we don't charge for warming.
+      // Schema-flex: jobs table is wide; only set what we need.
+      const JOB_COLS = new Set((db.all("PRAGMA table_info('jobs')") || []).map(r => r.name));
+      const hasWarmingTaskId = JOB_COLS.has('warming_task_id');
+      const insertCols = ['job_id', 'provider_id', 'renter_id', 'job_type', 'status',
+                          'submitted_at', 'duration_minutes', 'cost_halala',
+                          'gpu_requirements', 'task_spec', 'created_at', 'pricing_class'];
+      const insertVals = [job_id, targetProvider.id, req.renter.id, 'inference',
+                          'warming_provider', nowIso, duration_minutes, 0,
+                          minVramGb ? JSON.stringify({ min_vram_gb: minVramGb }) : null,
+                          JSON.stringify({
+                            job_type: 'inference',
+                            model_id: modelRow.model_id,
+                            warming: true,
+                          }),
+                          nowIso, 'standard'];
+      if (hasWarmingTaskId) { insertCols.push('warming_task_id'); insertVals.push(taskId); }
+      const placeholders = insertCols.map(() => '?').join(',');
+      db.prepare(`INSERT INTO jobs (${insertCols.join(',')}) VALUES (${placeholders})`).run(...insertVals);
+      // Eta is rough: 80 MB/s sustained pull on Saudi residential broadband
+      // assumed at 30 Mbps real-world ≈ 3 MB/s → size_GB × ~5 minutes/GB.
+      const sizeGb = (modelRow.download_size_bytes || 0) / 1_000_000_000;
+      const etaSeconds = Math.max(60, Math.round(sizeGb * 300));
+      return res.status(202).json({
+        job_id,
+        jobId: job_id,
+        id: job_id,
+        status: 'warming_provider',
+        warming: true,
+        task_id: taskId,
+        model: { model_id: modelRow.model_id, display_name: modelRow.display_name, min_gpu_vram_gb: modelRow.min_gpu_vram_gb },
+        provider: { id: targetProvider.id, name: targetProvider.name, gpu_model: targetProvider.gpu_model },
+        eta_seconds: etaSeconds,
+        message: `Model warming on provider "${targetProvider.name}". Estimated ${Math.ceil(etaSeconds / 60)} min until first request can route.`,
       });
     }
 

@@ -80,6 +80,9 @@ interface DeployState {
   loading: boolean
   error: string
   jobId: string | null
+  warming?: boolean
+  warmingProviderName?: string | null
+  warmingEtaSeconds?: number | null
 }
 
 type TaskFilter = 'all' | 'chat' | 'embedding' | 'reranking' | 'image'
@@ -209,9 +212,12 @@ function DeployModal({ deploy, onClose, onConfirm, registeredProviderCount }: {
 
   useEffect(() => {
     if (!deploy.jobId || deploy.jobId === 'submitted') return
+    // Don't auto-redirect when warming — let the renter read the modal
+    // and click through manually. They aren't being charged while warm.
+    if (deploy.warming) return
     const timer = setTimeout(() => router.push(`/renter/jobs/${deploy.jobId}`), 1200)
     return () => clearTimeout(timer)
-  }, [deploy.jobId, router])
+  }, [deploy.jobId, deploy.warming, router])
 
   return (
     <div
@@ -334,7 +340,24 @@ function DeployModal({ deploy, onClose, onConfirm, registeredProviderCount }: {
           </div>
         )}
 
-        {deploy.jobId && (
+        {deploy.jobId && deploy.warming && (
+          <div className="bg-dc1-amber/10 border border-dc1-amber/30 rounded-lg px-4 py-3 space-y-2">
+            <div className="flex items-center gap-2 text-sm text-dc1-amber font-semibold">
+              <span className="animate-spin h-4 w-4 border-2 border-dc1-amber border-t-transparent rounded-full" />
+              Model warming on {deploy.warmingProviderName || 'a provider'}
+            </div>
+            <p className="text-xs text-dc1-text-secondary">
+              {deploy.warmingEtaSeconds
+                ? `No provider had this model cached yet. The agent is pulling it now — estimated ${Math.ceil((deploy.warmingEtaSeconds || 0) / 60)} min until first request can route. You won't be charged until your first inference call completes.`
+                : 'No provider had this model cached yet. The agent is pulling it now. You won\'t be charged until your first inference call completes.'}
+            </p>
+            {deploy.jobId !== 'submitted' && (
+              <Link href={`/renter/jobs/${deploy.jobId}`} className="text-xs text-dc1-amber underline">Track warming progress →</Link>
+            )}
+          </div>
+        )}
+
+        {deploy.jobId && !deploy.warming && (
           <div className="bg-status-success/10 border border-status-success/30 rounded-lg px-4 py-3 space-y-2">
             <div className="flex items-center gap-2 text-sm text-status-success font-semibold">
               <span className="animate-spin h-4 w-4 border-2 border-status-success border-t-transparent rounded-full" />
@@ -619,7 +642,15 @@ export default function RenterModelsPage() {
       }
       const data = await res.json()
       const jobId = data.job_id || data.id || 'submitted'
-      setDeploy(d => ({ ...d, loading: false, jobId }))
+      const isWarming = Boolean(data.warming) || data.status === 'warming_provider' || res.status === 202
+      setDeploy(d => ({
+        ...d,
+        loading: false,
+        jobId,
+        warming: isWarming,
+        warmingProviderName: isWarming ? (data.provider?.name || null) : null,
+        warmingEtaSeconds: isWarming ? (data.eta_seconds || null) : null,
+      }))
     } catch {
       setDeploy(d => ({ ...d, loading: false, error: 'Network error. Please try again.' }))
     }
