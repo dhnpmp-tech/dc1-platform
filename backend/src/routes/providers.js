@@ -58,6 +58,80 @@ function runStatement(sql, ...params) {
     return db.prepare(sql).run(...flattenRunParams(params));
 }
 
+// ── Migration 008 helpers: pull-task channel ────────────────────────────────
+
+// Apply task_updates[] from heartbeat body. Each update may set progress, mark
+// completed/failed, or update status mid-pull. When a pull_model task completes
+// we re-dispatch the source job (lift it out of warming_provider).
+function applyTaskUpdates(providerId, updates, nowIso) {
+    if (!Array.isArray(updates) || updates.length === 0) return;
+    for (const raw of updates) {
+        const taskId = toFiniteInt(raw?.task_id, { min: 1 });
+        if (!taskId) continue;
+        // Confirm the task belongs to this provider (defense in depth).
+        const task = db.get('SELECT * FROM pending_provider_tasks WHERE id = ? AND provider_id = ?', taskId, providerId);
+        if (!task) continue;
+        const newStatus = ['in_progress', 'completed', 'failed'].includes(raw?.status) ? raw.status : task.status;
+        const progressPct = toFiniteInt(raw?.progress_pct, { min: 0, max: 100 }) ?? task.progress_pct ?? 0;
+        const progressMessage = normalizeString(raw?.progress_message, { maxLen: 500 }) || task.progress_message || null;
+        const errorReason = normalizeString(raw?.error_reason, { maxLen: 500 }) || (newStatus === 'failed' ? 'unspecified' : task.error_reason);
+        const isTerminal = newStatus === 'completed' || newStatus === 'failed';
+        const pickedUpAt = (newStatus === 'in_progress' && !task.picked_up_at) ? nowIso : task.picked_up_at;
+        const completedAt = isTerminal ? nowIso : null;
+        runStatement(
+            `UPDATE pending_provider_tasks
+                SET status = ?, progress_pct = ?, progress_message = ?, error_reason = ?,
+                    picked_up_at = COALESCE(?, picked_up_at),
+                    last_progress_at = ?,
+                    completed_at = ?
+              WHERE id = ?`,
+            newStatus, progressPct, progressMessage, errorReason,
+            pickedUpAt, nowIso, completedAt,
+            taskId
+        );
+        // On successful pull, lift the source job from 'warming_provider' to
+        // 'pending' so the normal dispatch path picks it up next tick.
+        if (newStatus === 'completed' && task.task_type === 'pull_model' && task.source_job_id) {
+            try {
+                runStatement(
+                    `UPDATE jobs SET status = 'pending', updated_at = ? WHERE job_id = ? AND status = 'warming_provider'`,
+                    nowIso, task.source_job_id
+                );
+            } catch (e) {
+                console.warn('[heartbeat/applyTaskUpdates] failed to lift job from warming:', e?.message);
+            }
+        }
+    }
+}
+
+// Fetch queued tasks for a provider, plus enough catalog metadata for the
+// agent to act without a follow-up backend call. Returns at most 5 tasks
+// per heartbeat to keep agent context short.
+function fetchPendingTasksForProvider(providerId) {
+    const rows = db.all(
+        `SELECT t.id AS task_id, t.task_type, t.params_json, t.status, t.created_at,
+                t.progress_pct
+           FROM pending_provider_tasks t
+          WHERE t.provider_id = ?
+            AND t.status IN ('queued', 'in_progress')
+          ORDER BY t.created_at ASC
+          LIMIT 5`,
+        providerId
+    );
+    return rows.map((r) => {
+        let params = null;
+        try { params = r.params_json ? JSON.parse(r.params_json) : null; } catch { params = null; }
+        return {
+            task_id: r.task_id,
+            task_type: r.task_type,
+            status: r.status,
+            progress_pct: r.progress_pct,
+            params,
+            created_at: r.created_at,
+        };
+    });
+}
+
 function recordActivationEvent(providerId, eventCode, metadata = null) {
     try {
         runStatement(
@@ -920,6 +994,7 @@ router.post('/heartbeat', heartbeatProviderLimiter, (req, res) => {
             vllm_models,
             wg_mesh_ip,          // Audit H5: WireGuard mesh IP advertised by daemon
             wg_health,           // Tier-1 WG telemetry (handshake age, rx/tx, ping)
+            task_updates,        // Migration 008: agent reports back on pull_model tasks
         } = req.body;
         const cleanApiKey = normalizeString(api_key, { maxLen: 128, trim: false });
         if (!cleanApiKey) return res.status(400).json({ error: 'api_key required' });
@@ -1283,6 +1358,12 @@ router.post('/heartbeat', heartbeatProviderLimiter, (req, res) => {
         } catch (announcementError) {
             console.warn('[p2p-discovery] heartbeat announce enqueue failed:', announcementError.message);
         }
+        // ── Migration 008: pull-task channel ──────────────────────────────
+        // Process any task progress / completion the agent reported, then
+        // query queued tasks for this provider to attach to the response.
+        applyTaskUpdates(p.id, task_updates, now);
+        const pendingTasks = fetchPendingTasksForProvider(p.id);
+
         return res.json({
             success: true, message: 'Heartbeat received', timestamp: now,
             needs_update: needsUpdate,
@@ -1312,6 +1393,9 @@ router.post('/heartbeat', heartbeatProviderLimiter, (req, res) => {
                 available_gpu_tiers: Array.from(tierCapability.available_gpu_tiers || []),
                 source: tierCapability.tier_capability_source || 'heuristic',
             },
+            // Migration 008: agent should execute these in order and report
+            // progress in `task_updates` on subsequent heartbeats.
+            pending_tasks: pendingTasks,
         });
         
     } catch (error) {
