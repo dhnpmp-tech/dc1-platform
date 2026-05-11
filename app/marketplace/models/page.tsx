@@ -345,8 +345,8 @@ export default function MarketplaceModelsPage() {
               Arabic AI Model Catalog
             </h1>
             <p className="text-dc1-text-secondary text-lg mb-6 max-w-2xl">
-              Deploy Arabic-capable LLMs, embeddings, and rerankers on Saudi GPUs.
-              PDPL-compliant, in-Kingdom compute — the only platform offering ALLaM, JAIS, and Falcon Arabic at local energy rates.
+              Deploy Arabic-capable LLMs, embeddings, and rerankers on Saudi-hosted GPUs.
+              PDPL-compliant, in-kingdom inference — the only platform offering ALLaM, JAIS, and Falcon Arabic side-by-side with Llama and Qwen.
             </p>
             <div className="flex flex-wrap gap-4 text-sm">
               <div className="flex items-center gap-2 bg-dc1-surface-l1 rounded-lg px-3 py-2 border border-dc1-border">
@@ -489,7 +489,7 @@ export default function MarketplaceModelsPage() {
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
               <h2 className="text-xl font-bold text-dc1-text-primary mb-2">Buyer Economics</h2>
               <p className="text-dc1-text-secondary text-sm mb-6">
-                DCP runs on Saudi energy (0.048 USD/kWh vs EU 0.27 USD/kWh). Providers pass the savings to renters.
+                Saudi-hosted providers compete directly for your inference traffic. You pay per token, providers earn 70% of revenue, no middleman markup.
               </p>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm border-collapse">

@@ -110,7 +110,7 @@ const copy = {
   heading: 'Submit and validate your first renter workload in five checkpoints',
   sub: 'From API key to output: auth, balance, compatible provider selection, submission, and completion review.',
   roleHeading: 'Choose your role path',
-  roleSub: 'Start from the flow that matches your role. DCP keeps one consistent trust model: Saudi energy advantage, Arabic AI support, and containerized execution.',
+  roleSub: 'Start from the flow that matches your role. DCP keeps one consistent trust model: sovereign Saudi-hosted compute, Arabic-first model support, and OpenAI-compatible API.',
   roleCards: [
     {
       title: 'I am a renter',
@@ -235,7 +235,7 @@ const copy = {
   heading: 'شغّل حمولة GPU في خطوات واضحة',
   sub: 'من إعداد الحساب إلى إرسال الحمولة: خطوات واضحة للمصادقة، الرصيد، اختيار مزود مناسب، ومراجعة النتيجة.',
   roleHeading: 'اختر مسارك حسب الدور',
-  roleSub: 'ابدأ من المسار المناسب لدورك. DCP يحافظ على نفس ركائز الثقة: ميزة الطاقة السعودية، دعم النماذج العربية، وتشغيل عبر الحاويات.',
+  roleSub: 'ابدأ من المسار المناسب لدورك. DCP يحافظ على نفس ركائز الثقة: حوسبة سيادية مستضافة داخل المملكة، دعم النماذج العربية من الدرجة الأولى، وواجهة متوافقة مع OpenAI.',
   roleCards: [
     {
       title: 'أنا مستأجر',

@@ -12,7 +12,7 @@ export interface ProviderActivationNarrative {
 const EN_NARRATIVE: ProviderActivationNarrative = {
   headline: 'Activate idle GPUs and start weekly earnings',
   subheadline:
-    'Saudi energy pricing + local data demand creates a margin advantage. DCP handles routing, billing, and payout tracking while you focus on uptime.',
+    'Saudi-hosted inference demand is growing — PDPL-driven and Arabic-first. You serve traffic, earn 70% of revenue, and DCP handles routing, billing, and payout tracking.',
   valuePoints: [
     'Fast activation with guided onboarding in minutes',
     'Transparent earnings math with assumptions shown up front',
@@ -40,7 +40,7 @@ const EN_NARRATIVE: ProviderActivationNarrative = {
 const AR_NARRATIVE: ProviderActivationNarrative = {
   headline: 'فعّل وحدات GPU غير المستغلة وابدأ دخلًا أسبوعيًا',
   subheadline:
-    'ميزة تكلفة الطاقة في السعودية مع الطلب المحلي على البيانات تمنحك هامشًا أفضل. منصة DCP تدير التوجيه والفوترة وتتبع المدفوعات بينما تركز أنت على الجاهزية.',
+    'الطلب على الاستدلال المستضاف داخل المملكة في تصاعد — مدفوعاً بمتطلبات PDPL وبالنماذج العربية. أنت تقدّم الخدمة، تحصل على 70% من الإيرادات، وDCP تتولى التوجيه والفوترة وتتبع المدفوعات.',
   valuePoints: [
     'تفعيل سريع عبر مسار إعداد إرشادي خلال دقائق',
     'شفافية في حساب الأرباح مع عرض الفرضيات بوضوح',
