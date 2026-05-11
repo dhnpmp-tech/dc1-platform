@@ -160,7 +160,18 @@ export default function MissionControlPage() {
         fetch(`${API_BASE}/mission/assignees`, { headers }),
       ])
       if (ov.status === 401 || tk.status === 401) {
-        router.push('/login?redirect=/mission')
+        // Don't bounce-loop to /login. Show inline detail so the user can
+        // recover (paste admin token, re-sign-in as renter) instead of
+        // looping through magic-link unnecessarily.
+        const detail = await ov.json().catch(() => null) as { error?: string } | null
+        const hasAdmin = typeof window !== 'undefined' && !!localStorage.getItem('dc1_admin_token')
+        const hasRenter = typeof window !== 'undefined' && !!localStorage.getItem('dc1_renter_key')
+        const which = hasAdmin ? 'admin token' : hasRenter ? 'renter key' : 'no DCP key found in this browser'
+        setError(`Auth rejected (401${detail?.error ? ` — ${detail.error}` : ''}). Browser is sending: ${which}. ` +
+          (!hasAdmin && !hasRenter
+            ? 'Open /login and sign in, then come back to /mission.'
+            : 'The token may be revoked or mismatched. Try clearing localStorage and signing in again.'))
+        setLoading(false)
         return
       }
       if (!ov.ok || !tk.ok || !gl.ok || !as.ok) throw new Error('failed to load mission control')
