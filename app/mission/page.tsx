@@ -154,7 +154,7 @@ export default function MissionControlPage() {
         fetch(`${API_BASE}/mission/assignees`, { headers }),
       ])
       if (ov.status === 401 || tk.status === 401) {
-        router.push('/login?next=/mission')
+        router.push('/login?redirect=/mission')
         return
       }
       if (!ov.ok || !tk.ok || !gl.ok || !as.ok) throw new Error('failed to load mission control')

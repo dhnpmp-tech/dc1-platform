@@ -125,7 +125,19 @@ function VerifyPageInner() {
             userName: data.renter?.name,
             email: data.renter?.email,
           })
-          router.replace('/renter/marketplace')
+          // Honor a pre-login redirect stashed by /login (sessionStorage
+          // key set in app/login/page.tsx handleSendMagicLink). Falls back
+          // to the renter marketplace if no pending redirect exists or it
+          // doesn't look safe.
+          let renterNext = '/renter/marketplace'
+          try {
+            const pending = sessionStorage.getItem('dcp_post_auth_redirect')
+            if (pending && pending.startsWith('/') && !pending.startsWith('//')) {
+              renterNext = pending
+            }
+            sessionStorage.removeItem('dcp_post_auth_redirect')
+          } catch { /* ignore */ }
+          router.replace(renterNext)
           return
         }
 
