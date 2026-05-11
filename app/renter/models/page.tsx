@@ -546,8 +546,7 @@ export default function RenterModelsPage() {
           template_id: model.template_id ?? undefined,
         }),
       })
-      if (res.status === 404) {
-        // Backend endpoint not yet deployed — fall back to job submission page
+      if (res.status === 404 || res.status === 405 || res.status === 501) {
         router.push(`/renter/playground?model=${encodeURIComponent(model.model_id)}`)
         return
       }
