@@ -8076,6 +8076,142 @@ router.post('/wg/register', async (req, res) => {
 });
 
 
+// ============================================================================
+// POST /api/providers/wg/install-config
+// One-shot installer endpoint. Generates an ephemeral keypair server-side
+// (so the installer doesn't have to run wg genkey), registers the public
+// half as a peer at a fresh mesh IP, returns a complete, paste-ready
+// wg0.conf for the installer to drop into /etc/wireguard/wg0.conf.
+//
+// Why this exists: every previous installer path (Python daemon, old
+// agent.sh, Nexus's setup script) generated a keypair on the box, then
+// either skipped the server-side peer registration or skipped writing
+// the conf with the returned PSK. Result: providers report "DCP Provider
+// is LIVE" while WG never handshakes. This endpoint collapses the chain
+// into one HTTP call so there's no place to drop pieces.
+//
+// Auth: x-provider-key. Idempotent — repeated calls return the SAME
+// config (same keypair, same PSK, same IP) until rotated.
+// ============================================================================
+router.post('/wg/install-config', async (req, res) => {
+    try {
+        const api_key = req.headers['x-provider-key'] || req.query.key;
+        if (!api_key) {
+            return res.status(401).json({ error: 'x-provider-key header required' });
+        }
+        const provider = db.get(
+            'SELECT id, name, wg_mesh_ip, wg_public_key FROM providers WHERE api_key = ? AND deleted_at IS NULL',
+            [api_key]
+        );
+        if (!provider) {
+            return res.status(404).json({ error: 'Provider not found for this api_key' });
+        }
+
+        // Generate keypair server-side. The private key NEVER leaves this
+        // response — the installer writes it to /etc/wireguard/wg0.conf
+        // with mode 0600 and we don't keep a copy.
+        let privKey, pubKey, psk;
+        try {
+            privKey = execSync('wg genkey', { timeout: 5000 }).toString().trim();
+            pubKey = execSync(`echo "${privKey}" | wg pubkey`, { timeout: 5000 }).toString().trim();
+            psk = execSync('wg genpsk', { timeout: 5000 }).toString().trim();
+        } catch (e) {
+            console.error('[wg/install-config] keygen failed:', e.message);
+            return res.status(500).json({ error: 'WireGuard tools missing on server: ' + e.message });
+        }
+
+        // Re-use existing IP if provider already has one, else allocate.
+        let assignedIp = provider.wg_mesh_ip;
+        if (!assignedIp) {
+            const usedIps = db.all("SELECT wg_mesh_ip FROM providers WHERE wg_mesh_ip IS NOT NULL");
+            const usedSet = new Set(usedIps.map(r => r.wg_mesh_ip));
+            for (let i = 3; i < 255; i++) {
+                const candidate = `10.8.0.${i}`;
+                if (!usedSet.has(candidate)) { assignedIp = candidate; break; }
+            }
+            if (!assignedIp) {
+                return res.status(503).json({ error: 'mesh subnet 10.8.0.0/24 full' });
+            }
+        }
+
+        // If provider already had a peer registered with a different pubkey,
+        // remove that stale peer first (atomicity fix for issue #358).
+        if (provider.wg_public_key && provider.wg_public_key !== pubKey) {
+            try {
+                if (/^[A-Za-z0-9+/]{42,44}={0,2}$/.test(provider.wg_public_key)) {
+                    execFileSync('wg', ['set', 'wg0', 'peer', provider.wg_public_key, 'remove'], { timeout: 5000 });
+                }
+            } catch (_) { /* old peer may not exist; ignore */ }
+        }
+
+        // Register new peer on the live wg0 + persist.
+        try {
+            const pskPath = `/tmp/wg_psk_install_${provider.id}_${Date.now()}`;
+            fs.writeFileSync(pskPath, psk + '\n', { mode: 0o600 });
+            execSync(
+                `wg set wg0 peer "${pubKey}" preshared-key ${pskPath} allowed-ips ${assignedIp}/32 persistent-keepalive 25`,
+                { timeout: 5000 }
+            );
+            execSync('wg-quick save wg0', { timeout: 5000 });
+            try { fs.unlinkSync(pskPath); } catch (_) {}
+        } catch (e) {
+            console.error('[wg/install-config] peer add failed:', e.message);
+            return res.status(500).json({ error: 'wg set failed: ' + e.message });
+        }
+
+        // Update DB. Same transactional shape as /wg/register.
+        runStatement(
+            `UPDATE providers
+                SET wg_mesh_ip = ?, wg_public_key = ?, wg_last_rotation_at = ?,
+                    vllm_endpoint_url = COALESCE(vllm_endpoint_url, ?),
+                    updated_at = datetime('now')
+              WHERE id = ?`,
+            assignedIp, pubKey, new Date().toISOString(),
+            `http://${assignedIp}:8000`,  // default vLLM port
+            provider.id
+        );
+
+        // Build the paste-ready wg0.conf body. Caller writes this verbatim
+        // to /etc/wireguard/wg0.conf (mode 0600).
+        const wgConfBody = [
+            '[Interface]',
+            `PrivateKey = ${privKey}`,
+            `Address = ${assignedIp}/24`,
+            'DNS = 1.1.1.1',
+            '',
+            '[Peer]',
+            `PublicKey = ${WG_SERVER_PUBKEY}`,
+            `PresharedKey = ${psk}`,
+            `Endpoint = ${WG_SERVER_ENDPOINT}`,
+            'AllowedIPs = 10.8.0.0/24',
+            'PersistentKeepalive = 25',
+            '',
+        ].join('\n');
+
+        console.log(`[wg/install-config] Provider ${provider.id} (${provider.name}) configured at ${assignedIp}`);
+
+        return res.json({
+            success: true,
+            mesh_ip: assignedIp,
+            wg_conf: wgConfBody,
+            vllm_endpoint_url: `http://${assignedIp}:8000`,
+            instructions: [
+                `sudo bash -c 'umask 077; cat > /etc/wireguard/wg0.conf <<EOF`,
+                wgConfBody.trimEnd(),
+                `EOF`,
+                `chmod 600 /etc/wireguard/wg0.conf`,
+                `wg-quick down wg0 2>/dev/null || true`,
+                `wg-quick up wg0`,
+                `'`,
+            ].join('\n'),
+        });
+    } catch (error) {
+        console.error('[wg/install-config] unexpected:', error);
+        return res.status(500).json({ error: 'wg install-config failed' });
+    }
+});
+
+
 module.exports = router;
 module.exports.__private = {
     discoverComputeTypesFromResourceSpec,
