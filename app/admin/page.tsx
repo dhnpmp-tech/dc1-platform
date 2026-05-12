@@ -154,10 +154,15 @@ export default function AdminDashboard() {
           throw new Error('Failed to load dashboard')
         }
         const data = await res.json()
-        setStats(data.stats)
-        setGpuBreakdown(data.gpu_breakdown || [])
-        setRecentSignups(data.recent_signups || [])
-        setRecentHeartbeats(data.recent_heartbeats || [])
+        // The Vercel-side route at app/api/admin/dashboard/route.ts wraps
+        // the backend payload under .dashboard alongside .fleet, .activeJobs,
+        // .reconciliation. Older builds returned the backend shape directly.
+        // Accept either so the page renders no matter which response wins.
+        const dash = data.dashboard || data
+        setStats(dash.stats)
+        setGpuBreakdown(dash.gpu_breakdown || [])
+        setRecentSignups(dash.recent_signups || [])
+        setRecentHeartbeats(dash.recent_heartbeats || [])
       } catch (err: any) {
         setError(err.message)
       } finally {
