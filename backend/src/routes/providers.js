@@ -8179,8 +8179,11 @@ router.post('/wg/install-config', async (req, res) => {
         const wgConfBody = [
             '[Interface]',
             `PrivateKey = ${privKey}`,
-            `Address = ${assignedIp}/24`,
-            'DNS = 1.1.1.1',
+            // Address uses /32 (not /24) to avoid the node claiming the entire mesh subnet.
+            // No DNS = directive — wg-quick will not touch resolvconf, so the provider's
+            // ISP-provided DNS stays intact. Mesh DNS isn't running on the VPS, and many MENA
+            // ISPs filter 1.1.1.1; leaving DNS to the provider's normal resolver is correct.
+            `Address = ${assignedIp}/32`,
             '',
             '[Peer]',
             `PublicKey = ${WG_SERVER_PUBKEY}`,
