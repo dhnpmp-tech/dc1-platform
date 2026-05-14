@@ -2321,6 +2321,25 @@ const translations: Record<Language, Record<string, string>> = {
     'support.faq.a4': 'Pricing details will be announced for early access members. Providers receive 75% revenue share and DCP retains 25%.',
     'support.faq.q5': 'Can I use DCP for cryptocurrency mining?',
     'support.faq.a5': 'No. Cryptocurrency mining is prohibited under our Acceptable Use Policy and will result in account termination.',
+
+    // Per-model rate card (DRAFT, see app/lib/rate-card.ts)
+    'rate_card.title': 'Per-Model Rate Card',
+    'rate_card.lead': 'Pay per token, billed in halala (1 SAR = 100 halala). Open-source models; you pay compute cost plus a small platform margin.',
+    'rate_card.draft_notice': 'DRAFT pricing — final rates pending founder review.',
+    'rate_card.updated': 'Updated',
+    'rate_card.col_model': 'Model',
+    'rate_card.col_prompt': 'Input',
+    'rate_card.col_completion': 'Output',
+    'rate_card.col_gpu': 'Recommended GPU',
+    'rate_card.col_savings': 'vs market',
+    'rate_card.halala_1k': 'halala / 1K tok',
+    'rate_card.sar_million': 'SAR/1M:',
+    'rate_card.per_image': 'per image',
+    'rate_card.unit_explainer': '1 SAR = 100 halala. Rates are halala per 1,000 tokens. "vs market" compares output rate to OpenRouter/Together AI/DeepInfra published prices for the same weights.',
+    'pricing.page.title': 'DCP Pricing',
+    'pricing.page.subtitle': 'Per-token inference, billed in halala. No idle fees. No hourly minimum. Saudi-hosted, PDPL-compliant.',
+    'pricing.page.cta': 'Get API Key',
+    'pricing.page.cta_secondary': 'See live providers',
   },
 
   ar: {
@@ -4611,6 +4630,25 @@ const translations: Record<Language, Record<string, string>> = {
     'footer.acceptable_use': 'سياسة الاستخدام المقبول',
     'footer.system_status': 'حالة النظام',
     'footer.company_legal': 'شركة حلول الطاقة الرقمية. س.ت: 7053667775. جميع الحقوق محفوظة.',
+
+    // Per-model rate card (DRAFT)
+    'rate_card.title': 'بطاقة أسعار النماذج',
+    'rate_card.lead': 'الدفع لكل رمز، يحتسب بالهللات (1 ريال = 100 هللة). نماذج مفتوحة المصدر؛ تدفع تكلفة الحوسبة مع هامش منصة محدود.',
+    'rate_card.draft_notice': 'مسودة أسعار — بانتظار الاعتماد النهائي من المؤسس.',
+    'rate_card.updated': 'آخر تحديث',
+    'rate_card.col_model': 'النموذج',
+    'rate_card.col_prompt': 'الإدخال',
+    'rate_card.col_completion': 'الإخراج',
+    'rate_card.col_gpu': 'GPU الموصى به',
+    'rate_card.col_savings': 'مقارنة بالسوق',
+    'rate_card.halala_1k': 'هللة / 1000 رمز',
+    'rate_card.sar_million': 'ريال/مليون:',
+    'rate_card.per_image': 'لكل صورة',
+    'rate_card.unit_explainer': '1 ريال = 100 هللة. الأسعار بالهللات لكل 1000 رمز. "مقارنة بالسوق" تقارن سعر الإخراج بأسعار OpenRouter و Together AI و DeepInfra المنشورة لنفس الأوزان.',
+    'pricing.page.title': 'أسعار DCP',
+    'pricing.page.subtitle': 'استدلال بنظام الدفع لكل رمز، باحتساب الهللات. لا رسوم خمول. لا حد أدنى ساعي. مستضاف في السعودية ومتوافق مع نظام حماية البيانات.',
+    'pricing.page.cta': 'احصل على مفتاح API',
+    'pricing.page.cta_secondary': 'مزودون مباشرون',
   },
 }
 

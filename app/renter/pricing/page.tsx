@@ -5,6 +5,7 @@ import Link from 'next/link'
 import DashboardLayout from '../../components/layout/DashboardLayout'
 import { useLanguage } from '../../lib/i18n'
 import { getApiBase } from '../../../lib/api'
+import ModelRateCard from '../../components/pricing/ModelRateCard'
 
 // ── SVG Icons ────────────────────────────────────────────────────────────────
 const HomeIcon = () => (
@@ -508,6 +509,9 @@ export default function PricingPage() {
             })}
           </div>
         </div>
+
+        {/* Per-Model Rate Card (DRAFT P1) */}
+        <ModelRateCard variant="full" />
 
         {/* Per-Token Inference API Pricing */}
         <div className="card border-dc1-amber/20">
