@@ -6,6 +6,7 @@ import Header from '../components/layout/Header'
 import Footer from '../components/layout/Footer'
 import { useLanguage } from '../lib/i18n'
 import FeaturedArabicModels from '../components/marketplace/FeaturedArabicModels'
+import ModelRateCard from '../components/pricing/ModelRateCard'
 
 // ── Types ──────────────────────────────────────────────────────────
 interface CostRates {
@@ -540,6 +541,11 @@ export default function MarketplacePage() {
 
         {/* Featured Arabic Models */}
         <FeaturedArabicModels />
+
+        {/* Per-Model Rate Card (DRAFT P1) */}
+        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+          <ModelRateCard variant="full" />
+        </section>
 
         {/* Market rates bar */}
         {!loading && !error && <MarketRates providers={providers} />}
