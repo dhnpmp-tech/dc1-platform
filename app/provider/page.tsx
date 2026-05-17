@@ -750,7 +750,7 @@ export default function ProviderDashboard() {
                   href={daemonDownloadUrl}
                   className="text-sm font-semibold text-dc1-amber hover:underline"
                 >
-                  Download Update
+                  {t('provider.download_update')}
                 </a>
               )}
             </div>

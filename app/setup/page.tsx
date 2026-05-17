@@ -18,6 +18,7 @@ import Footer from '../components/layout/Footer'
 import { WizardShell } from '../provider/components/wizard/WizardShell'
 import { saveSession } from '../provider/components/wizard/primitives'
 import type { Credentials } from '../provider/components/wizard/types'
+import { useLanguage } from '../lib/i18n'
 
 const WIZARD_RETURN_FLAG = 'dcp_wizard_redirect_after_auth'
 
@@ -100,6 +101,7 @@ function WizardPage() {
 }
 
 export default function SetupPage() {
+  const { t } = useLanguage()
   return (
     <>
       <Header />
@@ -107,10 +109,10 @@ export default function SetupPage() {
         <div className="mx-auto max-w-2xl">
           <div className="mb-6 text-center">
             <h1 className="text-3xl font-bold text-dc1-text-primary">
-              Become a DCP Provider
+              {t('setup.provider.hero_title')}
             </h1>
             <p className="mt-2 text-sm text-dc1-text-secondary">
-              Six steps, under 15 minutes. Your GPU starts earning as soon as you finish.
+              {t('setup.provider.hero_subtitle')}
             </p>
           </div>
 

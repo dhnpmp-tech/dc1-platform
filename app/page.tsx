@@ -320,7 +320,7 @@ export default function HomePage() {
           <div className="text-center max-w-3xl mx-auto">
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-dc1-amber/10 border border-dc1-amber/20 text-dc1-amber text-sm font-medium mb-6">
               <span className="w-2 h-2 bg-dc1-amber rounded-full animate-pulse" />
-              GPU COMPUTE MARKETPLACE — EARN SAR RUNNING AI INFERENCE
+              {t('landing.hero_eyebrow')}
             </div>
             <h1 className="text-5xl sm:text-7xl lg:text-8xl font-bold tracking-tight mb-6 text-dc1-amber">
               {t('landing.hero_title')}
@@ -329,7 +329,7 @@ export default function HomePage() {
               {t('landing.hero_desc')}
             </p>
             <p className="text-sm text-dc1-text-muted mb-6 max-w-xl mx-auto">
-              Windows, macOS (Apple Silicon), and Linux. 4 MB provider app. Zero config.
+              {t('landing.hero_install_targets')}
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-6">
               <Link
@@ -388,7 +388,7 @@ export default function HomePage() {
             </div>
             <div className="mb-8 rounded-xl border border-dc1-amber/30 bg-dc1-surface-l1/80 p-4 text-left">
               <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-dc1-amber">
-                How DCP works
+                {t('landing.how_dcp_works_label')}
               </p>
               <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
                 {howDcpWorksSteps.map((item, index) => (
@@ -401,7 +401,7 @@ export default function HomePage() {
             </div>
             <details className="max-w-4xl mx-auto w-full mb-4 rounded-xl border border-dc1-border bg-dc1-surface-l1/70 p-4 text-left">
               <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.14em] text-dc1-amber">
-                Explore all paths and tools
+                {t('landing.explore_paths_summary')}
               </summary>
               <div className="mt-4 space-y-4">
                 <div>
@@ -474,7 +474,7 @@ export default function HomePage() {
             </div>
             <div className="mt-5 mx-auto max-w-3xl rounded-xl border border-dc1-border bg-dc1-surface-l2/80 px-4 py-3 text-left">
               <p className="text-[11px] uppercase tracking-[0.14em] text-dc1-amber font-semibold mb-2">
-                PLATFORM STATUS
+                {t('landing.platform_status_label')}
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm text-dc1-text-secondary">
                 <p>
@@ -704,7 +704,7 @@ export default function HomePage() {
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
         <div className="text-center mb-16">
           <h2 className="text-3xl sm:text-4xl font-bold text-dc1-text-primary mb-4">
-            Earn SAR With Your GPU
+            {t('landing.earn_section_title')}
           </h2>
           <p className="text-dc1-text-secondary max-w-2xl mx-auto">
             4 MB desktop app. Auto-detects your GPU, installs the inference engine (Ollama or MLX), downloads the AI model, and connects to DCP. Zero config.
@@ -717,7 +717,7 @@ export default function HomePage() {
               <ul className="space-y-2.5 text-sm text-dc1-text-secondary">
                 <li className="flex items-start gap-2">
                   <span className="text-dc1-amber mt-0.5 flex-shrink-0">{'>'}</span>
-                  <span><strong className="text-dc1-text-primary">Windows, macOS (Apple Silicon), and Linux</strong> — works on the hardware you already own</span>
+                  <span><strong className="text-dc1-text-primary">{t('landing.provider_os_strong')}</strong> — works on the hardware you already own</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-dc1-amber mt-0.5 flex-shrink-0">{'>'}</span>
@@ -753,7 +753,7 @@ export default function HomePage() {
                 href="https://api.dcp.sa/download/windows"
                 className="btn btn-primary w-full text-center"
               >
-                Download DCP Provider
+                {t('landing.download_provider_button')}
               </a>
               <p className="text-xs text-dc1-text-muted mt-2 text-center">4 MB installer — Windows 10/11, RTX GPUs</p>
             </div>

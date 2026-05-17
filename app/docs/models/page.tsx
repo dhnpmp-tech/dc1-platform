@@ -177,12 +177,10 @@ export default function ModelsPage() {
       <section className="border-b border-gray-800 bg-gradient-to-b from-[#161b22] to-[#0d1117] px-4 py-16 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-6xl">
           <h1 className="mb-4 text-4xl font-bold text-white sm:text-5xl">
-            Supported Models
+            {t('docs.models.hero_title')}
           </h1>
           <p className="text-lg text-gray-400">
-            Deploy and run cutting-edge AI models on DCP's distributed GPU
-            infrastructure. From Arabic-specialized models to popular open-source
-            options, find the perfect model for your use case.
+            {t('docs.models.hero_subtitle')}
           </p>
         </div>
       </section>
@@ -241,11 +239,10 @@ export default function ModelsPage() {
       <section className="border-t border-gray-800 bg-gradient-to-r from-[#38B6E0] to-[#F5A524] bg-opacity-10 px-4 py-16 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="mb-4 text-3xl font-bold text-white">
-            Ready to run these models?
+            {t('docs.models.cta_title')}
           </h2>
           <p className="mb-8 text-gray-300">
-            Join DCP and start deploying powerful AI models on our GPU cloud
-            infrastructure today.
+            {t('docs.models.cta_subtitle')}
           </p>
           <Link
             href="/renter/register"

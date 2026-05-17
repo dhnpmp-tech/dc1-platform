@@ -2340,6 +2340,24 @@ const translations: Record<Language, Record<string, string>> = {
     'pricing.page.subtitle': 'Per-token inference, billed in halala. No idle fees. No hourly minimum. Saudi-hosted, PDPL-compliant.',
     'pricing.page.cta': 'Get API Key',
     'pricing.page.cta_secondary': 'See live providers',
+
+    // Hardcoded-string sweep 2026-05-17 — wired into i18n
+    'landing.hero_eyebrow': 'GPU COMPUTE MARKETPLACE — EARN SAR RUNNING AI INFERENCE',
+    'landing.hero_install_targets': 'Windows, macOS (Apple Silicon), and Linux. 4 MB provider app. Zero config.',
+    'landing.how_dcp_works_label': 'How DCP works',
+    'landing.explore_paths_summary': 'Explore all paths and tools',
+    'landing.platform_status_label': 'PLATFORM STATUS',
+    'landing.earn_section_title': 'Earn SAR With Your GPU',
+    'landing.provider_os_strong': 'Windows, macOS (Apple Silicon), and Linux',
+    'landing.download_provider_button': 'Download DCP Provider',
+    'setup.provider.hero_title': 'Become a DCP Provider',
+    'setup.provider.hero_subtitle': 'Six steps, under 15 minutes. Your GPU starts earning as soon as you finish.',
+    'marketplace.subnav.gpu_marketplace': 'GPU Marketplace',
+    'provider.download_update': 'Download Update',
+    'docs.models.hero_title': 'Supported Models',
+    'docs.models.hero_subtitle': "Deploy and run cutting-edge AI models on DCP's distributed GPU infrastructure. From Arabic-specialized models to popular open-source options, find the perfect model for your use case.",
+    'docs.models.cta_title': 'Ready to run these models?',
+    'docs.models.cta_subtitle': 'Join DCP and start deploying powerful AI models on our GPU cloud infrastructure today.',
   },
 
   ar: {
@@ -4649,6 +4667,24 @@ const translations: Record<Language, Record<string, string>> = {
     'pricing.page.subtitle': 'استدلال بنظام الدفع لكل رمز، باحتساب الهللات. لا رسوم خمول. لا حد أدنى ساعي. مستضاف في السعودية ومتوافق مع نظام حماية البيانات.',
     'pricing.page.cta': 'احصل على مفتاح API',
     'pricing.page.cta_secondary': 'مزودون مباشرون',
+
+    // Hardcoded-string sweep 2026-05-17 — wired into i18n
+    'landing.hero_eyebrow': 'سوق حوسبة GPU — اكسب بالريال من تشغيل الذكاء الاصطناعي',
+    'landing.hero_install_targets': 'ويندوز وماك (Apple Silicon) ولينكس. تطبيق المزوّد 4 ميجابايت. بدون إعدادات.',
+    'landing.how_dcp_works_label': 'كيف يعمل DCP',
+    'landing.explore_paths_summary': 'استكشف جميع المسارات والأدوات',
+    'landing.platform_status_label': 'حالة المنصة',
+    'landing.earn_section_title': 'اكسب بالريال من جهاز GPU الخاص بك',
+    'landing.provider_os_strong': 'ويندوز وماك (Apple Silicon) ولينكس',
+    'landing.download_provider_button': 'حمّل تطبيق مزوّد DCP',
+    'setup.provider.hero_title': 'كن مزوّداً في DCP',
+    'setup.provider.hero_subtitle': 'ست خطوات في أقل من 15 دقيقة. يبدأ GPU بتحقيق الدخل فور إكمالك للخطوات.',
+    'marketplace.subnav.gpu_marketplace': 'سوق وحدات GPU',
+    'provider.download_update': 'حمّل التحديث',
+    'docs.models.hero_title': 'النماذج المدعومة',
+    'docs.models.hero_subtitle': 'انشر وشغّل أحدث نماذج الذكاء الاصطناعي على بنية DCP الموزعة لوحدات GPU. من النماذج المتخصصة باللغة العربية إلى نماذج المصدر المفتوح الشهيرة — اعثر على النموذج المناسب لحالة استخدامك.',
+    'docs.models.cta_title': 'جاهز لتشغيل هذه النماذج؟',
+    'docs.models.cta_subtitle': 'انضم إلى DCP وابدأ بنشر نماذج ذكاء اصطناعي قوية على سحابة GPU لدينا اليوم.',
   },
 }
 

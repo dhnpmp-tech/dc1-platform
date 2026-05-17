@@ -527,7 +527,7 @@ export default function MarketplacePage() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex gap-1 overflow-x-auto py-2">
               <span className="shrink-0 px-4 py-1.5 rounded-full text-sm font-medium bg-dc1-amber text-white border border-dc1-amber">
-                GPU Marketplace
+                {t('marketplace.subnav.gpu_marketplace')}
               </span>
               <Link href="/marketplace/templates" className="shrink-0 px-4 py-1.5 rounded-full text-sm font-medium text-dc1-text-secondary border border-dc1-border hover:border-dc1-amber/40 hover:text-dc1-text-primary transition-colors">
                 🚀 Templates
