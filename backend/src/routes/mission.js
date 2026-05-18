@@ -34,7 +34,14 @@ function isAuthed(req) {
         renterKey
       );
       if (row) return true;
-    } catch (_) { /* renter_api_keys may not exist in some env */ }
+    } catch (err) {
+      // renter_api_keys may not exist in some env — swallow that case
+      // (legitimate fresh install), but log anything else so we see
+      // real auth-path corruption.
+      if (!/no such table/i.test((err && err.message) || '')) {
+        console.error('[mission] auth lookup failed (renter_api_keys)', { message: err && err.message });
+      }
+    }
   }
   // Provider API key — Mission Control is an internal team surface.
   // Tareq + Fadi are providers; this lets them stay signed in normally
@@ -47,7 +54,11 @@ function isAuthed(req) {
         providerKey
       );
       if (row) return true;
-    } catch (_) { /* providers table column may differ */ }
+    } catch (err) {
+      if (!/no such table/i.test((err && err.message) || '')) {
+        console.error('[mission] auth lookup failed (providers)', { message: err && err.message });
+      }
+    }
   }
   // Dedicated agent key (off unless MISSION_AGENT_KEY env is set)
   if (MISSION_AGENT_KEY && req.headers['x-mission-agent-key'] === MISSION_AGENT_KEY) return true;

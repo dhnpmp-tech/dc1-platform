@@ -222,9 +222,18 @@ export default function MissionControlPage() {
       setTasks(tkJson.tasks || [])
       setGoals(glJson.goals || [])
       setAssignees(asJson.assignees || [])
-      if (fl.ok) { try { setFleet(await fl.json()) } catch {} }
-      if (rp.ok) { try { const j = await rp.json(); setRepos(j.repos || []) } catch {} }
-      if (fi.ok) { try { const j = await fi.json(); setFileLinks(j.links || []) } catch {} }
+      if (fl.ok) {
+        try { setFleet(await fl.json()) }
+        catch (err) { console.error('[mission] fleet parse failed', err) }
+      }
+      if (rp.ok) {
+        try { const j = await rp.json(); setRepos(j.repos || []) }
+        catch (err) { console.error('[mission] repos parse failed', err) }
+      }
+      if (fi.ok) {
+        try { const j = await fi.json(); setFileLinks(j.links || []) }
+        catch (err) { console.error('[mission] files parse failed', err) }
+      }
       setLastUpdated(new Date())
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'load failed')
@@ -269,8 +278,14 @@ export default function MissionControlPage() {
       const res = await fetch(`${API_BASE}/mission/tasks/${task.id}`, {
         method: 'PATCH', headers: authHeaders(), body: JSON.stringify(body),
       })
-      if (!res.ok) throw new Error('move failed')
-    } catch {
+      if (!res.ok) {
+        setError(`Move failed (HTTP ${res.status})`)
+        fetchAll()
+        return
+      }
+    } catch (err) {
+      console.error('[mission] move failed', { taskId: task.id, status, err })
+      setError(`Move failed: ${err instanceof Error ? err.message : 'unknown'}`)
       fetchAll()
     }
   }, [fetchAll, me])
@@ -1520,8 +1535,14 @@ function TaskModal({
     if (!task || !confirm('Delete this task?')) return
     setSaving(true)
     try {
-      await fetch(`${API_BASE}/mission/tasks/${task.id}`, { method: 'DELETE', headers: authHeaders() })
+      const res = await fetch(`${API_BASE}/mission/tasks/${task.id}`, { method: 'DELETE', headers: authHeaders() })
+      if (!res.ok) {
+        setErr(`Delete failed (${res.status})`)
+        return
+      }
       onSaved()
+    } catch (err) {
+      setErr(`Delete failed: ${err instanceof Error ? err.message : 'network'}`)
     } finally { setSaving(false) }
   }
 

@@ -414,7 +414,15 @@ function requireAuth(req, res, next) {
       });
     }
     let scopes = [];
-    try { scopes = JSON.parse(scopedKey.scopes || '[]'); } catch (_) {}
+    try {
+      scopes = JSON.parse(scopedKey.scopes || '[]');
+    } catch (err) {
+      console.error('[v1] corrupted scopes JSON for key', {
+        keyId: scopedKey.id,
+        raw: scopedKey.scopes,
+        message: err && err.message,
+      });
+    }
     if (!scopes.includes('inference') && !scopes.includes('admin')) {
       return sendV1Error(res, {
         status: 403,
@@ -424,7 +432,14 @@ function requireAuth(req, res, next) {
         retryable: false,
       });
     }
-    try { db.prepare('UPDATE renter_api_keys SET last_used_at = ? WHERE id = ?').run(now, scopedKey.id); } catch (_) {}
+    try {
+      db.prepare('UPDATE renter_api_keys SET last_used_at = ? WHERE id = ?').run(now, scopedKey.id);
+    } catch (err) {
+      console.warn('[v1] last_used_at write failed', {
+        keyId: scopedKey.id,
+        message: err && err.message,
+      });
+    }
     req.renter = { id: scopedKey.r_id, api_key: scopedKey.api_key, balance_halala: scopedKey.balance_halala, status: scopedKey.status };
     req.renterKey = key;
     return next();
@@ -1450,7 +1465,27 @@ async function proxyToProvider({
   // If streaming, return the raw response for pipe-through
   if (stream) return { streamResponse: response };
   let parsed;
-  try { parsed = await response.json(); } catch (_) {
+  // Clone the response BEFORE reading so we can salvage the raw body on
+  // JSON parse failure. fetch bodies are single-shot streams — once
+  // `.json()` consumes them they're gone, so we need a fresh clone for
+  // the text peek fallback.
+  const responseClone = (() => {
+    try { return response.clone(); } catch (_) { return null; }
+  })();
+  try {
+    parsed = await response.json();
+  } catch (err) {
+    let peek = '';
+    if (responseClone) {
+      try { peek = await responseClone.text(); } catch (_) { peek = ''; }
+    }
+    console.error('[v1] non-JSON upstream', {
+      url,
+      status: response.status,
+      contentType: response.headers.get('content-type'),
+      bodyPeek: peek.slice(0, 500),
+      parseError: err && err.message,
+    });
     return { proxyError: 'invalid_response', detail: 'Provider returned non-JSON body' };
   }
   // Belt-and-suspenders: strip <think>...</think> from the response when
