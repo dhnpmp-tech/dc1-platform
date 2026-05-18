@@ -168,13 +168,13 @@ router.get('/tasks', requireAuth, (req, res) => {
   if (req.query.status) {
     const statuses = String(req.query.status).split(',').filter(s => TASK_STATUSES.includes(s));
     if (statuses.length) {
-      where.push(`status IN (${statuses.map(() => '?').join(',')})`);
+      where.push(`t.status IN (${statuses.map(() => '?').join(',')})`);
       params.push(...statuses);
     }
   }
-  if (req.query.assignee) { where.push('assignee_id = ?'); params.push(String(req.query.assignee)); }
-  if (req.query.goal)     { where.push('goal_id = ?');     params.push(String(req.query.goal)); }
-  if (req.query.milestone){ where.push('milestone_id = ?');params.push(String(req.query.milestone)); }
+  if (req.query.assignee) { where.push('t.assignee_id = ?'); params.push(String(req.query.assignee)); }
+  if (req.query.goal)     { where.push('t.goal_id = ?');     params.push(String(req.query.goal)); }
+  if (req.query.milestone){ where.push('t.milestone_id = ?');params.push(String(req.query.milestone)); }
   const sql = `
     SELECT t.*,
            a.display_name AS assignee_name,
@@ -199,7 +199,17 @@ router.get('/tasks', requireAuth, (req, res) => {
       t.due_date IS NULL,
       t.due_date ASC,
       t.updated_at DESC`;
-  const rows = db.all(sql, ...params);
+  let rows;
+  try {
+    rows = db.all(sql, ...params);
+  } catch (err) {
+    console.error('[mission] list tasks failed', {
+      query: req.query,
+      message: err && err.message,
+      code: err && err.code,
+    });
+    return res.status(500).json({ error: 'list_failed', detail: err && err.message });
+  }
   res.json({ tasks: rows });
 });
 
@@ -275,17 +285,40 @@ router.patch('/tasks/:id', requireAuth, (req, res) => {
   if (leavingDone)  sets.push(`completed_at = NULL`);
   sets.push(`updated_at = datetime('now')`);
   params.push(req.params.id);
-  db.run(`UPDATE mission_tasks SET ${sets.join(', ')} WHERE id = ?`, ...params);
+  let result;
+  try {
+    result = db.run(`UPDATE mission_tasks SET ${sets.join(', ')} WHERE id = ?`, ...params);
+  } catch (err) {
+    console.error('[mission] task update failed', {
+      id: req.params.id,
+      body: req.body,
+      message: err && err.message,
+      code: err && err.code,
+    });
+    return res.status(500).json({ error: 'update_failed', detail: err && err.message });
+  }
+  if (!result || result.changes === 0) {
+    console.warn('[mission] task update no rows affected', { id: req.params.id, body: req.body });
+    return res.status(409).json({ error: 'no_rows_updated' });
+  }
   // Optional closing comment piggy-backed on the same PATCH. Only persisted
   // when the task is actually transitioning to done — silently dropped on
   // re-completion or unrelated edits so frontend doesn't have to guard.
   if (becomingDone) {
     const closing = clean(req.body?.closing_comment, 8000);
     if (closing) {
-      db.run(
-        `INSERT INTO mission_task_comments (id, task_id, author_id, body, source, kind) VALUES (?, ?, ?, ?, ?, ?)`,
-        newId('cmt'), req.params.id, clean(req.body?.author_id, 100), closing, 'ui', 'closing'
-      );
+      try {
+        db.run(
+          `INSERT INTO mission_task_comments (id, task_id, author_id, body, source, kind) VALUES (?, ?, ?, ?, ?, ?)`,
+          newId('cmt'), req.params.id, clean(req.body?.author_id, 100), closing, 'ui', 'closing'
+        );
+      } catch (err) {
+        console.error('[mission] closing comment insert failed', {
+          id: req.params.id,
+          message: err && err.message,
+          code: err && err.code,
+        });
+      }
     }
   }
   const task = db.get(`SELECT * FROM mission_tasks WHERE id = ?`, req.params.id);
@@ -320,7 +353,22 @@ router.post('/tasks/:id/reassign', requireAuth, (req, res) => {
     params.push('todo');
   }
   params.push(req.params.id);
-  db.run(`UPDATE mission_tasks SET ${sets.join(', ')} WHERE id = ?`, ...params);
+  let result;
+  try {
+    result = db.run(`UPDATE mission_tasks SET ${sets.join(', ')} WHERE id = ?`, ...params);
+  } catch (err) {
+    console.error('[mission] task reassign update failed', {
+      id: req.params.id,
+      body: req.body,
+      message: err && err.message,
+      code: err && err.code,
+    });
+    return res.status(500).json({ error: 'reassign_failed', detail: err && err.message });
+  }
+  if (!result || result.changes === 0) {
+    console.warn('[mission] task reassign no rows affected', { id: req.params.id });
+    return res.status(409).json({ error: 'no_rows_updated' });
+  }
   const prev = task.assignee_id
     ? (db.get(`SELECT display_name FROM mission_assignees WHERE id = ?`, task.assignee_id)?.display_name || task.assignee_id)
     : 'unassigned';
@@ -331,17 +379,40 @@ router.post('/tasks/:id/reassign', requireAuth, (req, res) => {
     : '';
   const body = `Reassigned from ${prev} → ${assignee.display_name}${reopenNote}: ${comment}`;
   const cmtId = newId('cmt');
-  db.run(
-    `INSERT INTO mission_task_comments (id, task_id, author_id, body, source, kind) VALUES (?, ?, ?, ?, ?, ?)`,
-    cmtId, req.params.id, clean(req.body?.author_id, 100), body, 'ui', 'reassignment'
-  );
+  try {
+    db.run(
+      `INSERT INTO mission_task_comments (id, task_id, author_id, body, source, kind) VALUES (?, ?, ?, ?, ?, ?)`,
+      cmtId, req.params.id, clean(req.body?.author_id, 100), body, 'ui', 'reassignment'
+    );
+  } catch (err) {
+    console.error('[mission] reassign comment insert failed', {
+      id: req.params.id,
+      cmtId,
+      message: err && err.message,
+      code: err && err.code,
+    });
+    return res.status(500).json({ error: 'reassign_comment_failed', detail: err && err.message });
+  }
   const updated = db.get(`SELECT * FROM mission_tasks WHERE id = ?`, req.params.id);
   res.json({ task: updated, comment: db.get(`SELECT * FROM mission_task_comments WHERE id = ?`, cmtId) });
 });
 
 router.delete('/tasks/:id', requireAuth, (req, res) => {
-  const r = db.run(`DELETE FROM mission_tasks WHERE id = ?`, req.params.id);
-  res.json({ deleted: r.changes > 0 });
+  let r;
+  try {
+    r = db.run(`DELETE FROM mission_tasks WHERE id = ?`, req.params.id);
+  } catch (err) {
+    console.error('[mission] task delete failed', {
+      id: req.params.id,
+      message: err && err.message,
+      code: err && err.code,
+    });
+    return res.status(500).json({ error: 'delete_failed', detail: err && err.message });
+  }
+  if (!r || r.changes === 0) {
+    return res.status(409).json({ error: 'no_rows_deleted', deleted: false });
+  }
+  res.json({ deleted: true });
 });
 
 router.post('/tasks/:id/comments', requireAuth, (req, res) => {
@@ -415,7 +486,21 @@ router.patch('/milestones/:id', requireAuth, (req, res) => {
   if (req.body?.status === 'done' && existing.status !== 'done') sets.push(`completed_at = datetime('now')`);
   sets.push(`updated_at = datetime('now')`);
   params.push(req.params.id);
-  db.run(`UPDATE mission_milestones SET ${sets.join(', ')} WHERE id = ?`, ...params);
+  let result;
+  try {
+    result = db.run(`UPDATE mission_milestones SET ${sets.join(', ')} WHERE id = ?`, ...params);
+  } catch (err) {
+    console.error('[mission] milestone update failed', {
+      id: req.params.id,
+      body: req.body,
+      message: err && err.message,
+      code: err && err.code,
+    });
+    return res.status(500).json({ error: 'update_failed', detail: err && err.message });
+  }
+  if (!result || result.changes === 0) {
+    return res.status(409).json({ error: 'no_rows_updated' });
+  }
   res.json({ milestone: db.get(`SELECT * FROM mission_milestones WHERE id = ?`, req.params.id) });
 });
 
@@ -464,7 +549,21 @@ router.patch('/goals/:id', requireAuth, (req, res) => {
   if (sets.length === 0) return res.status(400).json({ error: 'no updatable fields' });
   sets.push(`updated_at = datetime('now')`);
   params.push(req.params.id);
-  db.run(`UPDATE mission_goals SET ${sets.join(', ')} WHERE id = ?`, ...params);
+  let result;
+  try {
+    result = db.run(`UPDATE mission_goals SET ${sets.join(', ')} WHERE id = ?`, ...params);
+  } catch (err) {
+    console.error('[mission] goal update failed', {
+      id: req.params.id,
+      body: req.body,
+      message: err && err.message,
+      code: err && err.code,
+    });
+    return res.status(500).json({ error: 'update_failed', detail: err && err.message });
+  }
+  if (!result || result.changes === 0) {
+    return res.status(409).json({ error: 'no_rows_updated' });
+  }
   res.json({ goal: db.get(`SELECT * FROM mission_goals WHERE id = ?`, req.params.id) });
 });
 

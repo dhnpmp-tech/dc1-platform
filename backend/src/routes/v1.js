@@ -1845,7 +1845,20 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
         // legacy ledger above).
         const msg = String(error?.message || error || '');
         if (!/UNIQUE constraint failed.*usage_events/i.test(msg)) {
-          console.error('[v1/chat/completions] usage_events insert failed:', msg);
+          // Structured drift-detection signal: this means usagePersisted=true
+          // but the usage_events row is missing. On-call needs these receipts
+          // to reconcile billing vs ledger after the fact.
+          console.error('[v1/chat/completions] usage_events insert failed — billing/ledger drift', {
+            request_id: meteringRequestId || null,
+            renter_id: req.renter.id,
+            provider_id: providerForUsage?.id || null,
+            model_id: modelReq.model_id,
+            cost_halala: snapshot.costHalala || 0,
+            prompt_tokens: snapshot.promptTokens || 0,
+            completion_tokens: snapshot.completionTokens || 0,
+            settlement_status: settlementStatus,
+            message: msg,
+          });
         }
       }
       usagePersisted = true;
@@ -1855,7 +1868,19 @@ router.post('/chat/completions', v1ChatRateLimiter, requireAuth, async (req, res
       try {
         db.prepare('UPDATE renters SET balance_halala = balance_halala - ?, updated_at = ? WHERE id = ? AND balance_halala >= ?')
           .run(costHalala, new Date().toISOString(), req.renter.id, costHalala);
-      } catch (_) { /* best-effort */ }
+      } catch (err) {
+        // Structured drift-detection: this is the ONLY renter-balance debit
+        // on the proxy success path. A silent failure here means the usage
+        // ledger says billed but the renter's balance was never deducted.
+        // Behavior preserved (no throw) per ops decision — log only for now,
+        // full transactional rewrite is a follow-up.
+        console.error('[v1] debit failed — ledger/balance drift', {
+          renterId: req.renter.id,
+          costHalala,
+          message: err && err.message,
+          code: err && err.code,
+        });
+      }
     };
 
     const debitAndPersistUsage = ({ providerForUsage, providerResponseId = null, usage, completionText = '' }) => {
