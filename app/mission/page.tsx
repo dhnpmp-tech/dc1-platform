@@ -248,6 +248,47 @@ export default function MissionControlPage() {
     }
   }, [fetchAll])
 
+  // Optimistic PATCH used by inline TaskRow controls (done checkbox + closing
+  // comment). Returns true on success so callers can decide whether to
+  // collapse their inline form. On failure we re-pull the canonical state.
+  const patchTask = useCallback(async (task: Task, patch: Record<string, unknown>): Promise<boolean> => {
+    const optimistic: Partial<Task> = {}
+    if (typeof patch.status === 'string') optimistic.status = patch.status as TaskStatus
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, ...optimistic } : t)))
+    try {
+      const res = await fetch(`${API_BASE}/mission/tasks/${task.id}`, {
+        method: 'PATCH', headers: authHeaders(), body: JSON.stringify(patch),
+      })
+      if (!res.ok) throw new Error('patch failed')
+      // Refetch so we pick up server-derived fields (completed_at, updated_at)
+      // and any comments inserted as side-effects.
+      fetchAll()
+      return true
+    } catch {
+      fetchAll()
+      return false
+    }
+  }, [fetchAll])
+
+  // Reassign w/ mandatory comment. Backend validates min length + active
+  // assignee, so we mirror the same checks here purely for snappy UX.
+  const reassignTask = useCallback(async (task: Task, newAssigneeId: string, comment: string): Promise<{ ok: true } | { ok: false; error: string }> => {
+    try {
+      const res = await fetch(`${API_BASE}/mission/tasks/${task.id}/reassign`, {
+        method: 'POST', headers: authHeaders(),
+        body: JSON.stringify({ new_assignee_id: newAssigneeId, comment }),
+      })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({})) as { error?: string }
+        return { ok: false, error: j.error || 'reassign failed' }
+      }
+      fetchAll()
+      return { ok: true }
+    } catch (e: unknown) {
+      return { ok: false, error: e instanceof Error ? e.message : 'reassign failed' }
+    }
+  }, [fetchAll])
+
   return (
     <div className={`mc-root ${inter.variable} ${serif.variable} ${mono.variable}`}>
       <style jsx global>{`
@@ -357,11 +398,11 @@ export default function MissionControlPage() {
           <div className="mc-eyebrow" style={{ textAlign: 'center', padding: '80px 0' }}>Loading…</div>
         ) : (
           <>
-            {section === 'overview' && overview && <Overview overview={overview} fleet={fleet} repos={repos} fileLinks={fileLinks} onOpenTask={setEditingTask} />}
+            {section === 'overview' && overview && <Overview overview={overview} fleet={fleet} repos={repos} fileLinks={fileLinks} assignees={assignees} onOpenTask={setEditingTask} onPatch={patchTask} onReassign={reassignTask} />}
             {section === 'board' && (
               <Board tasksByStatus={tasksByStatus} onMove={moveTask} onOpen={setEditingTask} />
             )}
-            {section === 'goals' && <Goals goals={goals} tasks={tasks} onOpenTask={setEditingTask} />}
+            {section === 'goals' && <Goals goals={goals} tasks={tasks} assignees={assignees} onOpenTask={setEditingTask} onPatch={patchTask} onReassign={reassignTask} />}
           </>
         )}
       </main>
@@ -535,14 +576,20 @@ function SectionMeta({ index, label, right }: { index: string; label: string; ri
 }
 
 // ── Overview ───────────────────────────────────────────────────────────
+type PatchFn = (task: Task, patch: Record<string, unknown>) => Promise<boolean>
+type ReassignFn = (task: Task, newAssigneeId: string, comment: string) => Promise<{ ok: true } | { ok: false; error: string }>
+
 function Overview({
-  overview, fleet, repos, fileLinks, onOpenTask,
+  overview, fleet, repos, fileLinks, assignees, onOpenTask, onPatch, onReassign,
 }: {
   overview: Overview
   fleet: Fleet | null
   repos: Repo[]
   fileLinks: FileLink[]
+  assignees: Assignee[]
   onOpenTask: (t: Task) => void
+  onPatch: PatchFn
+  onReassign: ReassignFn
 }) {
   const { counts, today, blocked, recent_done, active_goals } = overview
   const stats: { label: string; value: number; tone: 'teal' | 'orange' | 'ink' | 'mut' }[] = [
@@ -584,8 +631,8 @@ function Overview({
       <section>
         <SectionMeta index="03" label="Today & Blocked" right={`${today.length + blocked.length} items`} />
         <div className="mc-two-col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32 }}>
-          <ListCard title="Today" caption="In progress, review, or due in ≤ 24h" tasks={today} onOpen={onOpenTask} emptyText="Nothing on deck." />
-          <ListCard title="Blocked" caption="Awaiting unblock" tasks={blocked} onOpen={onOpenTask} emptyText="No blockers." accentHot />
+          <ListCard title="Today" caption="In progress, review, or due in ≤ 24h" tasks={today} assignees={assignees} onOpen={onOpenTask} onPatch={onPatch} onReassign={onReassign} emptyText="Nothing on deck." />
+          <ListCard title="Blocked" caption="Awaiting unblock" tasks={blocked} assignees={assignees} onOpen={onOpenTask} onPatch={onPatch} onReassign={onReassign} emptyText="No blockers." accentHot />
         </div>
       </section>
 
@@ -809,10 +856,12 @@ function FilesSection({ links }: { links: FileLink[] }) {
 }
 
 function ListCard({
-  title, caption, tasks, onOpen, emptyText, accentHot,
+  title, caption, tasks, assignees, onOpen, onPatch, onReassign, emptyText, accentHot,
 }: {
   title: string; caption?: string; tasks: Task[]
-  onOpen: (t: Task) => void; emptyText: string; accentHot?: boolean
+  assignees: Assignee[]
+  onOpen: (t: Task) => void; onPatch: PatchFn; onReassign: ReassignFn
+  emptyText: string; accentHot?: boolean
 }) {
   return (
     <div style={{
@@ -834,55 +883,241 @@ function ListCard({
         {tasks.length === 0 && (
           <div className="mc-eyebrow" style={{ textAlign: 'center', padding: '40px 18px' }}>{emptyText}</div>
         )}
-        {tasks.map((t, i) => <TaskRow key={t.id} task={t} onOpen={onOpen} isLast={i === tasks.length - 1} />)}
+        {tasks.map((t, i) => <TaskRow key={t.id} task={t} assignees={assignees} onOpen={onOpen} onPatch={onPatch} onReassign={onReassign} isLast={i === tasks.length - 1} />)}
       </div>
     </div>
   )
 }
 
-function TaskRow({ task, onOpen, isLast }: { task: Task; onOpen: (t: Task) => void; isLast?: boolean }) {
+function TaskRow({ task, assignees, onOpen, onPatch, onReassign, isLast }: { task: Task; assignees: Assignee[]; onOpen: (t: Task) => void; onPatch: PatchFn; onReassign: ReassignFn; isLast?: boolean }) {
   const due = dueLabel(task.due_date)
   const dueColor = due?.tone === 'hot' ? 'var(--orange)' : due?.tone === 'warm' ? '#e8a854' : due?.tone === 'cool' ? 'var(--ink-2)' : 'var(--mut)'
   const prMatch = task.source_url && /github\.com\/[^/]+\/[^/]+\/pull\/(\d+)/.exec(task.source_url)
+  const isDone = task.status === 'done'
+
+  // Inline UI state: we keep both forms collapsed by default so the row
+  // looks identical to before until a user opts in. Mutually exclusive
+  // (toggling one closes the other) to avoid a cramped layout.
+  const [closingOpen, setClosingOpen] = useState(false)
+  const [closingText, setClosingText] = useState('')
+  const [reassignOpen, setReassignOpen] = useState(false)
+  const [reassignTo, setReassignTo] = useState(task.assignee_id || '')
+  const [reassignComment, setReassignComment] = useState('')
+  const [reassignErr, setReassignErr] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  // Click-and-stop helper for any inline control so the parent row's
+  // onOpen handler doesn't fire underneath us.
+  const stop = (e: React.MouseEvent | React.ChangeEvent) => { e.stopPropagation() }
+
+  const handleToggleDone = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.stopPropagation()
+    if (busy) return
+    if (isDone) {
+      // Un-check: revert to todo, clear closing-comment input UI.
+      setBusy(true)
+      setClosingOpen(false); setClosingText('')
+      await onPatch(task, { status: 'todo' })
+      setBusy(false)
+    } else {
+      // Optimistically mark done in the UI by opening the closing-comment
+      // sub-row. The actual PATCH fires when the user picks Save or Skip
+      // so the closing comment (if any) goes in the same request.
+      setReassignOpen(false)
+      setClosingOpen(true)
+    }
+  }
+
+  const submitDone = async (withComment: boolean) => {
+    if (busy) return
+    setBusy(true)
+    const payload: Record<string, unknown> = { status: 'done' }
+    if (withComment) {
+      const c = closingText.trim()
+      if (c) payload.closing_comment = c
+    }
+    await onPatch(task, payload)
+    setBusy(false)
+    setClosingOpen(false)
+    setClosingText('')
+  }
+
+  const submitReassign = async () => {
+    if (busy) return
+    setReassignErr('')
+    if (!reassignTo) { setReassignErr('Pick an assignee'); return }
+    if (reassignComment.trim().length < 8) { setReassignErr('Comment must be at least 8 characters'); return }
+    setBusy(true)
+    const result = await onReassign(task, reassignTo, reassignComment.trim())
+    setBusy(false)
+    if (result.ok) {
+      setReassignOpen(false); setReassignComment(''); setReassignErr('')
+    } else {
+      setReassignErr(result.error)
+    }
+  }
+
   return (
-    <div onClick={() => onOpen(task)} style={{
+    <div style={{
       padding: '14px 18px', borderBottom: isLast ? 'none' : '1px solid var(--hair)',
-      cursor: 'pointer', transition: 'background .15s',
-      display: 'flex', gap: 12, alignItems: 'flex-start',
+      transition: 'background .15s', position: 'relative',
     }} className="mc-row">
-      <Avatar name={task.assignee_name} kind={task.assignee_kind} size={28} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 14, color: 'var(--ink)', lineHeight: 1.4, display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
-          <span>{task.title}</span>
-          {prMatch && (
-            <a href={task.source_url || '#'} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="mc-mono" style={{
-              fontSize: 10, color: 'var(--teal)', textDecoration: 'none',
-              border: '1px solid color-mix(in oklab, var(--teal) 40%, transparent)', padding: '1px 6px',
-              borderRadius: 2, letterSpacing: '.08em', textTransform: 'uppercase',
-            }}>PR #{prMatch[1]}</a>
-          )}
-        </div>
-        <div className="mc-mono" style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: 11, color: 'var(--mut)', letterSpacing: '.04em' }}>
-          <span style={{ color: task.priority === 'p0' ? 'var(--orange)' : task.priority === 'p1' ? '#e8a854' : 'var(--mut)' }}>
-            {PRIORITY_LABEL[task.priority]}
-          </span>
-          {task.assignee_name && (
-            <span style={{ color: task.assignee_kind === 'agent' ? 'var(--teal)' : 'var(--ink-2)' }}>
-              {task.assignee_name}
-            </span>
-          )}
-          {task.goal_title && <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>↳ {task.goal_title}</span>}
-          {due && <span style={{ color: dueColor }}>{due.label}</span>}
-        </div>
-        {task.status === 'blocked' && task.blocked_reason && (
-          <div className="mc-mono" style={{ marginTop: 4, fontSize: 11, color: 'var(--orange)', letterSpacing: '.02em', lineHeight: 1.4 }}>
-            ↳ {task.blocked_reason}
+      <div onClick={() => onOpen(task)} style={{
+        cursor: 'pointer',
+        display: 'flex', gap: 12, alignItems: 'flex-start',
+      }}>
+        {/* Done checkbox — square ASCII-style box. Native input kept
+            visible (not visually-hidden) for screen reader friendliness;
+            sized to a comfortable 18px touch target. */}
+        <input
+          type="checkbox"
+          aria-label={isDone ? `Mark "${task.title}" as not done` : `Mark "${task.title}" as done`}
+          checked={isDone}
+          disabled={busy}
+          onClick={stop}
+          onChange={handleToggleDone}
+          style={{
+            width: 18, height: 18, marginTop: 4, flexShrink: 0,
+            cursor: busy ? 'wait' : 'pointer',
+            accentColor: 'var(--teal)',
+          }}
+        />
+        <Avatar name={task.assignee_name} kind={task.assignee_kind} size={28} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontSize: 14,
+            color: isDone ? 'var(--mut)' : 'var(--ink)',
+            textDecoration: isDone ? 'line-through' : 'none',
+            lineHeight: 1.4, display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap',
+          }}>
+            <span>{task.title}</span>
+            {prMatch && (
+              <a href={task.source_url || '#'} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="mc-mono" style={{
+                fontSize: 10, color: 'var(--teal)', textDecoration: 'none',
+                border: '1px solid color-mix(in oklab, var(--teal) 40%, transparent)', padding: '1px 6px',
+                borderRadius: 2, letterSpacing: '.08em', textTransform: 'uppercase',
+              }}>PR #{prMatch[1]}</a>
+            )}
           </div>
-        )}
+          <div className="mc-mono" style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: 11, color: 'var(--mut)', letterSpacing: '.04em' }}>
+            <span style={{ color: task.priority === 'p0' ? 'var(--orange)' : task.priority === 'p1' ? '#e8a854' : 'var(--mut)' }}>
+              {PRIORITY_LABEL[task.priority]}
+            </span>
+            {task.assignee_name && (
+              <span style={{ color: task.assignee_kind === 'agent' ? 'var(--teal)' : 'var(--ink-2)' }}>
+                {task.assignee_name}
+              </span>
+            )}
+            {task.goal_title && <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>↳ {task.goal_title}</span>}
+            {due && <span style={{ color: dueColor }}>{due.label}</span>}
+          </div>
+          {task.status === 'blocked' && task.blocked_reason && (
+            <div className="mc-mono" style={{ marginTop: 4, fontSize: 11, color: 'var(--orange)', letterSpacing: '.02em', lineHeight: 1.4 }}>
+              ↳ {task.blocked_reason}
+            </div>
+          )}
+        </div>
+        <button
+          onClick={(e) => { e.stopPropagation(); setClosingOpen(false); setReassignOpen((v) => !v) }}
+          className="mc-mono"
+          title="Reassign this task with a comment"
+          style={{
+            fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase',
+            color: reassignOpen ? 'var(--teal)' : 'var(--mut)',
+            background: 'transparent', border: '1px solid var(--hair)',
+            padding: '4px 8px', borderRadius: 2, cursor: 'pointer',
+            flexShrink: 0, alignSelf: 'flex-start', marginTop: 2,
+          }}
+        >↪ Reassign</button>
       </div>
+
+      {/* Closing-comment input shown right after the box gets ticked. */}
+      {closingOpen && !isDone && (
+        <div onClick={stop} style={{ marginTop: 10, marginInlineStart: 30, paddingInlineStart: 12, borderInlineStart: '2px solid var(--teal)' }}>
+          <div className="mc-mono" style={{ fontSize: 10.5, color: 'var(--mut)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 6 }}>
+            Closing comment (optional)
+          </div>
+          <textarea
+            value={closingText}
+            onChange={(e) => setClosingText(e.target.value)}
+            rows={2}
+            placeholder="What got it across the line?"
+            style={{
+              width: '100%', background: 'var(--bg-2)', border: '1px solid var(--hair)',
+              color: 'var(--ink)', padding: '8px 10px', fontSize: 13, fontFamily: 'var(--sans)',
+              borderRadius: 2, outline: 'none', resize: 'vertical', lineHeight: 1.4,
+            }}
+            autoFocus
+          />
+          <div style={{ display: 'flex', gap: 6, marginTop: 8, justifyContent: 'flex-end' }}>
+            <button onClick={(e) => { stop(e); submitDone(false) }} disabled={busy} className="mc-mono" style={inlineBtnGhost}>Skip</button>
+            <button onClick={(e) => { stop(e); submitDone(true) }} disabled={busy || !closingText.trim()} className="mc-mono" style={inlineBtnPrimary(busy || !closingText.trim())}>
+              {busy ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Reassign inline form. */}
+      {reassignOpen && (
+        <div onClick={stop} style={{ marginTop: 10, marginInlineStart: 30, paddingInlineStart: 12, borderInlineStart: '2px solid var(--orange)' }}>
+          <div className="mc-mono" style={{ fontSize: 10.5, color: 'var(--mut)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 6 }}>
+            Reassign — comment required
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <select
+              value={reassignTo}
+              onChange={(e) => setReassignTo(e.target.value)}
+              style={{
+                width: '100%', background: 'var(--bg-2)', border: '1px solid var(--hair)',
+                color: 'var(--ink)', padding: '8px 10px', fontSize: 13, fontFamily: 'var(--sans)',
+                borderRadius: 2, outline: 'none',
+              }}
+            >
+              <option value="">Choose assignee…</option>
+              {assignees.map((a) => (
+                <option key={a.id} value={a.id}>{a.kind === 'agent' ? '⚙ ' : ''}{a.display_name}</option>
+              ))}
+            </select>
+            <textarea
+              value={reassignComment}
+              onChange={(e) => setReassignComment(e.target.value)}
+              rows={2}
+              placeholder="Why are you reassigning this?"
+              style={{
+                width: '100%', background: 'var(--bg-2)', border: '1px solid var(--hair)',
+                color: 'var(--ink)', padding: '8px 10px', fontSize: 13, fontFamily: 'var(--sans)',
+                borderRadius: 2, outline: 'none', resize: 'vertical', lineHeight: 1.4,
+              }}
+            />
+            {reassignErr && (
+              <div className="mc-mono" style={{ color: 'var(--orange)', fontSize: 11 }}>{reassignErr}</div>
+            )}
+            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+              <button onClick={(e) => { stop(e); setReassignOpen(false); setReassignErr(''); setReassignComment('') }} disabled={busy} className="mc-mono" style={inlineBtnGhost}>Cancel</button>
+              <button onClick={(e) => { stop(e); submitReassign() }} disabled={busy} className="mc-mono" style={inlineBtnPrimary(busy)}>
+                {busy ? 'Reassigning…' : 'Submit'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
+
+// Small inline-action buttons used by TaskRow's done + reassign forms.
+const inlineBtnGhost: React.CSSProperties = {
+  fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase',
+  color: 'var(--mut)', background: 'transparent',
+  border: '1px solid var(--hair)', padding: '6px 12px', borderRadius: 2, cursor: 'pointer',
+}
+const inlineBtnPrimary = (disabled: boolean): React.CSSProperties => ({
+  fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase',
+  color: 'var(--bg)', background: 'var(--teal)',
+  border: '1px solid var(--teal)', padding: '6px 12px', borderRadius: 2,
+  cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1,
+})
 
 function GoalChip({ goal }: { goal: Goal }) {
   const total = goal.task_count || 0
@@ -998,7 +1233,7 @@ function Board({
 }
 
 // ── Goals view ─────────────────────────────────────────────────────────
-function Goals({ goals, tasks, onOpenTask }: { goals: Goal[]; tasks: Task[]; onOpenTask: (t: Task) => void }) {
+function Goals({ goals, tasks, assignees, onOpenTask, onPatch, onReassign }: { goals: Goal[]; tasks: Task[]; assignees: Assignee[]; onOpenTask: (t: Task) => void; onPatch: PatchFn; onReassign: ReassignFn }) {
   return (
     <div>
       <SectionMeta index="03" label="Goals" right={`${goals.length}`} />
@@ -1028,7 +1263,7 @@ function Goals({ goals, tasks, onOpenTask }: { goals: Goal[]; tasks: Task[]; onO
                   </div>
                 </div>
                 {goalTasks.length > 0 && goalTasks.map((t, i) => (
-                  <TaskRow key={t.id} task={t} onOpen={onOpenTask} isLast={i === goalTasks.length - 1} />
+                  <TaskRow key={t.id} task={t} assignees={assignees} onOpen={onOpenTask} onPatch={onPatch} onReassign={onReassign} isLast={i === goalTasks.length - 1} />
                 ))}
               </div>
             )
@@ -1091,6 +1326,18 @@ function MobileNav({ section, onSection, onNewTask }: { section: Section; onSect
 }
 
 // ── Modals ─────────────────────────────────────────────────────────────
+interface TaskComment {
+  id: string
+  task_id: string
+  author_id: string | null
+  author_name?: string | null
+  author_kind?: AssigneeKind | null
+  body: string
+  source?: string | null
+  kind?: string | null
+  created_at: string
+}
+
 function TaskModal({
   task, assignees, goals, onClose, onSaved,
 }: {
@@ -1108,6 +1355,19 @@ function TaskModal({
   const [blocked, setBlocked]         = useState<string>(task?.blocked_reason || '')
   const [saving, setSaving]           = useState(false)
   const [err, setErr]                 = useState<string>('')
+  const [comments, setComments]       = useState<TaskComment[]>([])
+
+  // Load comment history for existing tasks. New-task modal has no id yet
+  // so we skip the fetch entirely.
+  useEffect(() => {
+    if (!task?.id) return
+    let cancelled = false
+    fetch(`${API_BASE}/mission/tasks/${task.id}/comments`, { headers: authHeaders() })
+      .then((r) => r.ok ? r.json() : null)
+      .then((j) => { if (!cancelled && j?.comments) setComments(j.comments) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [task?.id])
 
   const save = async () => {
     if (!title.trim()) { setErr('Title is required'); return }
@@ -1178,6 +1438,16 @@ function TaskModal({
             <Input value={blocked} onChange={(v) => setBlocked(v)} />
           </Field>
         )}
+        {task && comments.length > 0 && (
+          <div>
+            <div className="mc-mono" style={{ fontSize: 10.5, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--mut)', marginBottom: 8 }}>
+              History
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {comments.map((c) => <CommentItem key={c.id} comment={c} />)}
+            </div>
+          </div>
+        )}
         {err && <div className="mc-mono" style={{ color: 'var(--orange)', fontSize: 12 }}>{err}</div>}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8 }}>
           {task ? (
@@ -1245,6 +1515,48 @@ function GoalModal({ assignees, onClose, onSaved }: { assignees: Assignee[]; onC
         </div>
       </div>
     </ModalShell>
+  )
+}
+
+// One row in the task's comment timeline. Closing comments get a green
+// checkmark and a sharper border so they stand out from chatter; reassignment
+// comments get a curved-arrow icon. Everything else falls through to a
+// neutral style.
+function CommentItem({ comment }: { comment: TaskComment }) {
+  const isClosing = comment.kind === 'closing'
+  const isReassign = comment.kind === 'reassignment'
+  const accent = isClosing ? 'var(--teal)' : isReassign ? 'var(--orange)' : 'var(--hair)'
+  const icon = isClosing ? '✓' : isReassign ? '↪' : '·'
+  const labelPrefix = isClosing ? 'Closing comment' : isReassign ? 'Reassignment' : 'Comment'
+  const when = (() => {
+    if (!comment.created_at) return ''
+    const d = new Date(comment.created_at.replace(' ', 'T') + (comment.created_at.endsWith('Z') ? '' : 'Z'))
+    if (Number.isNaN(d.getTime())) return comment.created_at
+    return d.toLocaleString()
+  })()
+  return (
+    <div style={{
+      borderInlineStart: `2px solid ${accent}`,
+      paddingInlineStart: 12,
+      paddingBlock: 6,
+      background: isClosing ? 'color-mix(in oklab, var(--teal) 6%, transparent)' : 'transparent',
+    }}>
+      <div className="mc-mono" style={{
+        fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase',
+        color: isClosing ? 'var(--teal)' : isReassign ? 'var(--orange)' : 'var(--mut)',
+        marginBottom: 4, display: 'flex', gap: 6, alignItems: 'center',
+      }}>
+        <span aria-hidden="true">{icon}</span>
+        <span>{labelPrefix}</span>
+        <span style={{ color: 'var(--mut)', textTransform: 'none', letterSpacing: 0 }}>·</span>
+        <span style={{ color: 'var(--ink-2)', textTransform: 'none', letterSpacing: 0 }}>{comment.author_name || 'unknown'}</span>
+        <span style={{ color: 'var(--mut)', textTransform: 'none', letterSpacing: 0 }}>· {when}</span>
+      </div>
+      <div style={{
+        fontSize: 13.5, color: isClosing ? 'var(--ink)' : 'var(--ink-2)',
+        lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+      }}>{comment.body}</div>
+    </div>
   )
 }
 

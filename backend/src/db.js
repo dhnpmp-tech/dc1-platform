@@ -1097,6 +1097,12 @@ const migrations = [
   // secret — leaking the API key inside webhook signatures sent to URLs the
   // renter (or anyone reading their webhook traffic) controls.
   'ALTER TABLE renters ADD COLUMN webhook_secret TEXT',
+  // Mission Control 2026-05-16: tag comment provenance.
+  //   source: free-form origin string ("ui", "agent:claude", ...)
+  //   kind:   semantic class ("comment" default, "reassignment", "closing")
+  // Both nullable for back-compat — old rows stay readable.
+  'ALTER TABLE mission_task_comments ADD COLUMN source TEXT',
+  'ALTER TABLE mission_task_comments ADD COLUMN kind TEXT',
 ];
 
 migrations.forEach(sql => {
@@ -2149,6 +2155,8 @@ db.exec(`
     task_id    TEXT    NOT NULL,
     author_id  TEXT,
     body       TEXT    NOT NULL,
+    source     TEXT,
+    kind       TEXT,
     created_at TEXT    NOT NULL DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_mission_tasks_status    ON mission_tasks(status, priority, due_date);

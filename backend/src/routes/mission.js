@@ -198,15 +198,72 @@ router.patch('/tasks/:id', requireAuth, (req, res) => {
     }
   }
   if (sets.length === 0) return res.status(400).json({ error: 'no updatable fields provided' });
-  // Auto-stamp completed_at when transitioning to done.
-  if (req.body?.status === 'done' && existing.status !== 'done') {
-    sets.push(`completed_at = datetime('now')`);
-  }
+  // Auto-stamp completed_at on done; clear it on un-done.
+  // We diff against existing.status so re-checking a done task is a no-op
+  // and un-checking (done -> todo/anything-else) properly resets the stamp.
+  const becomingDone = req.body?.status === 'done' && existing.status !== 'done';
+  const leavingDone  = existing.status === 'done' && req.body?.status && req.body.status !== 'done';
+  if (becomingDone) sets.push(`completed_at = datetime('now')`);
+  if (leavingDone)  sets.push(`completed_at = NULL`);
   sets.push(`updated_at = datetime('now')`);
   params.push(req.params.id);
   db.run(`UPDATE mission_tasks SET ${sets.join(', ')} WHERE id = ?`, ...params);
+  // Optional closing comment piggy-backed on the same PATCH. Only persisted
+  // when the task is actually transitioning to done — silently dropped on
+  // re-completion or unrelated edits so frontend doesn't have to guard.
+  if (becomingDone) {
+    const closing = clean(req.body?.closing_comment, 8000);
+    if (closing) {
+      db.run(
+        `INSERT INTO mission_task_comments (id, task_id, author_id, body, source, kind) VALUES (?, ?, ?, ?, ?, ?)`,
+        newId('cmt'), req.params.id, clean(req.body?.author_id, 100), closing, 'ui', 'closing'
+      );
+    }
+  }
   const task = db.get(`SELECT * FROM mission_tasks WHERE id = ?`, req.params.id);
   res.json({ task });
+});
+
+// Reassign with mandatory rationale. Insertion of the explanatory comment +
+// the assignee swap happen together — if validation fails neither side
+// runs, so the comment log stays in sync with the task state.
+router.post('/tasks/:id/reassign', requireAuth, (req, res) => {
+  const task = db.get(`SELECT * FROM mission_tasks WHERE id = ?`, req.params.id);
+  if (!task) return res.status(404).json({ error: 'task not found' });
+  const newAssigneeId = clean(req.body?.new_assignee_id, 100);
+  const comment = clean(req.body?.comment, 8000);
+  if (!newAssigneeId) return res.status(400).json({ error: 'new_assignee_id required' });
+  if (!comment || comment.length < 8) {
+    return res.status(400).json({ error: 'comment required (min 8 chars)' });
+  }
+  const assignee = db.get(
+    `SELECT id, display_name FROM mission_assignees WHERE id = ? AND active = 1`,
+    newAssigneeId
+  );
+  if (!assignee) return res.status(400).json({ error: 'assignee not found or inactive' });
+  // Reactivate if reassigning from a terminal state — moving work between
+  // people while it's marked done/cancelled is almost always a sign the
+  // closure was premature.
+  const reopen = task.status === 'done' || task.status === 'cancelled';
+  const sets = [`assignee_id = ?`, `updated_at = datetime('now')`];
+  const params = [newAssigneeId];
+  if (reopen) {
+    sets.push(`status = ?`, `completed_at = NULL`);
+    params.push('todo');
+  }
+  params.push(req.params.id);
+  db.run(`UPDATE mission_tasks SET ${sets.join(', ')} WHERE id = ?`, ...params);
+  const prev = task.assignee_id
+    ? (db.get(`SELECT display_name FROM mission_assignees WHERE id = ?`, task.assignee_id)?.display_name || task.assignee_id)
+    : 'unassigned';
+  const body = `Reassigned from ${prev} → ${assignee.display_name}: ${comment}`;
+  const cmtId = newId('cmt');
+  db.run(
+    `INSERT INTO mission_task_comments (id, task_id, author_id, body, source, kind) VALUES (?, ?, ?, ?, ?, ?)`,
+    cmtId, req.params.id, clean(req.body?.author_id, 100), body, 'ui', 'reassignment'
+  );
+  const updated = db.get(`SELECT * FROM mission_tasks WHERE id = ?`, req.params.id);
+  res.json({ task: updated, comment: db.get(`SELECT * FROM mission_task_comments WHERE id = ?`, cmtId) });
 });
 
 router.delete('/tasks/:id', requireAuth, (req, res) => {
@@ -221,8 +278,10 @@ router.post('/tasks/:id/comments', requireAuth, (req, res) => {
   if (!body) return res.status(400).json({ error: 'body required' });
   const id = newId('cmt');
   db.run(
-    `INSERT INTO mission_task_comments (id, task_id, author_id, body) VALUES (?, ?, ?, ?)`,
-    id, req.params.id, clean(req.body?.author_id, 100), body
+    `INSERT INTO mission_task_comments (id, task_id, author_id, body, source, kind) VALUES (?, ?, ?, ?, ?, ?)`,
+    id, req.params.id, clean(req.body?.author_id, 100), body,
+    clean(req.body?.source, 50) || 'ui',
+    clean(req.body?.kind, 50) || 'comment'
   );
   res.status(201).json({ comment: db.get(`SELECT * FROM mission_task_comments WHERE id = ?`, id) });
 });
